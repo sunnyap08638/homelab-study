@@ -136,13 +136,34 @@ function showDeckResult(message, id) {
   status.replaceChildren(message + " ", link);
 }
 
-const uploadLimit = 10_000_000_000;
+let uploadLimit;
 const uploadChunkSize = 8 * 1024 * 1024;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const pendingUploads = new WeakMap();
 
+async function loadUploadLimit() {
+  if (uploadLimit !== undefined) return uploadLimit;
+  const response = await fetch("/healthz");
+  const bytes = Number(response.headers.get("X-Home-Study-Anki-Package-Max-Bytes"));
+  if (!response.ok || !Number.isSafeInteger(bytes) || bytes < 1) {
+    throw new Error("Couldn’t check the current upload limit. Try again.");
+  }
+  uploadLimit = bytes;
+  const limit = (bytes / 1_000_000_000) + " GB";
+  document.getElementById("deck-file-limit").textContent = "Anki packages can be up to " + limit + ".";
+  document.getElementById("chat-file-limit").textContent = "Up to " + limit + " per file.";
+  return bytes;
+}
+
+async function validateUploadFile(file) {
+  const limit = await loadUploadLimit();
+  if (!file?.size || file.size > limit) {
+    throw new Error("Choose a file of up to " + (limit / 1_000_000_000) + " GB.");
+  }
+}
+
 async function uploadFile(file, cancel) {
-  if (!file?.size || file.size > uploadLimit) throw new Error("Choose a file of up to 10 GB.");
+  await validateUploadFile(file);
   let pending = pendingUploads.get(cancel);
   if (pending && pending.file !== file) {
     await api(pending.path + "/cancel", {}).catch(() => {});
@@ -300,7 +321,7 @@ chatForm.addEventListener("submit", async event => {
   let textClipped = false;
   try {
     if (file?.size) {
-      if (file.size > uploadLimit) throw new Error("Choose a file of up to 10 GB.");
+      await validateUploadFile(file);
       if (data.source) throw new Error("Use one temporary source per message.");
       const suffix = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
       if (suffix === ".pdf") {
@@ -396,5 +417,6 @@ document.getElementById("import-note").addEventListener("submit", async (event) 
 });
 
 refreshDecks();
+loadUploadLimit().catch(() => {});
 refreshNotes().catch(error => { status.textContent = error.message; });
 setInterval(() => refreshNotes().catch(() => {}), 15000);

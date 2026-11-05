@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Study session · Home Study</title>
+  <title>Study session · Mneme</title>
   <link rel="stylesheet" href="/study.css">
   <script defer src="/common.js"></script>
   <script defer src="/review.js"></script>
@@ -31,8 +31,12 @@
     <div class="review-actions">
       <button id="show-answer" class="primary" type="button" hidden>Show answer</button>
       <button id="show-question" type="button" hidden>Show question</button>
-      <button id="again" type="button" hidden>Again <small>10 min</small></button>
-      <button id="good" class="primary" type="button" hidden>Good</button>
+      <div id="rating-actions" class="rating-actions" role="group" aria-label="Rate your recall" hidden>
+        <button type="button" data-rating="again" title="Couldn’t recall (1)">Again <small></small></button>
+        <button type="button" data-rating="hard" title="Recalled with difficulty (2)">Hard <small></small></button>
+        <button type="button" data-rating="good" class="primary" title="Recalled with normal effort (3)">Good <small></small></button>
+        <button type="button" data-rating="easy" title="Recalled immediately (4)">Easy <small></small></button>
+      </div>
       <button id="next-card" class="primary" type="button" hidden>Next card</button>
       <button id="retry-review" type="button" hidden>Try again</button>
     </div>

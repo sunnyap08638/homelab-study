@@ -1,5 +1,6 @@
-"""Bounded disk staging for the single Home Study instance."""
+"""Bounded disk staging for the single Mneme instance."""
 
+import os
 import shutil
 import tempfile
 import threading
@@ -8,7 +9,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from secrets import token_hex
 
-MAX_BYTES = 10_000_000_000
+MAX_BYTES = int(os.environ.get("STUDY_UPLOAD_MAX_BYTES", "10000000000"))
+GB = 1_000_000_000
 CHUNK_BYTES = 8 * 1024 * 1024
 IDLE_SECONDS = 60 * 60
 DISK_RESERVE = 2 * 1024 ** 3
@@ -70,7 +72,7 @@ class Uploads:
 
     def start(self, size):
         if type(size) is not int or not 0 < size <= MAX_BYTES:
-            raise UploadError("Choose a file of up to 10 GB.")
+            raise UploadError(f"Choose a file of up to {MAX_BYTES / GB:g} GB.")
         self.expire()
         with self.lock:
             active = [job for job in self.jobs.values() if job.state in ("uploading", "working")]

@@ -15,6 +15,7 @@ import threading
 import time
 from base64 import b64encode
 from contextlib import closing, contextmanager
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -29,6 +30,9 @@ EXCERPT = 3500
 IMPORT_LOCK = threading.Lock()
 PDF_LOCK = threading.Lock()
 UPLOAD_ROUTE = r"/api/uploads/([a-f0-9]{32})"
+RATINGS = ("again", "hard", "good", "easy")
+DAY = 86_400
+MAX_REVIEW_DAYS = 365
 
 
 class BadRequest(Exception):
@@ -67,6 +71,12 @@ def setup():
                 digest TEXT PRIMARY KEY, mime TEXT NOT NULL
             );
         """)
+        db.execute("BEGIN IMMEDIATE")
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
+        if "learning_step" not in columns:
+            db.execute("ALTER TABLE cards ADD COLUMN learning_step TEXT")
+        if "ease" not in columns:
+            db.execute("ALTER TABLE cards ADD COLUMN ease INTEGER NOT NULL DEFAULT 250")
 
 
 def field(data, name, size, *, allow_empty=False):
@@ -182,21 +192,61 @@ def decide(card_id, data):
     return {}
 
 
+@dataclass(frozen=True)
+class ReviewSchedule:
+    ease: int
+    days: int = 0
+    step: str | None = None
+    minutes: int = 0
+
+    @property
+    def delay(self):
+        return self.days * DAY + self.minutes * 60
+
+
+def review_options(card):
+    days, step, ease = card["days"], card["learning_step"], card["ease"]
+    if days:
+        hard = max(days + 1, (days * 120 + 50) // 100)
+        good = max(hard + 1, (days * ease + 50) // 100)
+        easy = max(good + 1, (days * ease * 130 + 5000) // 10000)
+        return {
+            "again": ReviewSchedule(max(130, ease - 20), step="relearning", minutes=10),
+            "hard": ReviewSchedule(max(130, ease - 15), days=min(MAX_REVIEW_DAYS, hard)),
+            "good": ReviewSchedule(ease, days=min(MAX_REVIEW_DAYS, good)),
+            "easy": ReviewSchedule(ease + 15, days=min(MAX_REVIEW_DAYS, easy)),
+        }
+    # Before learning steps were stored, a reviewed card with zero days had been missed.
+    if step == "relearning" or (step is None and card["reviews"]):
+        return {
+            "again": ReviewSchedule(ease, step="relearning", minutes=10),
+            "hard": ReviewSchedule(ease, step="relearning", minutes=15),
+            "good": ReviewSchedule(ease, days=1),
+            "easy": ReviewSchedule(ease, days=2),
+        }
+    last_step = step == "second"
+    return {
+        "again": ReviewSchedule(ease, step="first", minutes=1),
+        "hard": ReviewSchedule(ease, step="second" if last_step else "first", minutes=10 if last_step else 6),
+        "good": ReviewSchedule(ease, days=1) if last_step else ReviewSchedule(ease, step="second", minutes=10),
+        "easy": ReviewSchedule(ease, days=4),
+    }
+
+
 def review(card_id, data):
     rating = data.get("rating")
     reviews = data.get("reviews")
-    if type(reviews) is not int or rating not in ("again", "good"):
-        raise BadRequest("Choose Again or Good.")
-    now = int(time.time())
+    if type(reviews) is not int or rating not in RATINGS:
+        raise BadRequest("Choose Again, Hard, Good, or Easy.")
     with database() as db:
         db.execute("BEGIN IMMEDIATE")
-        card = one(db, "SELECT days FROM cards WHERE id=? AND state='active'", (card_id,))
-        days = min(365, max(1, card["days"] * 2)) if rating == "good" else 0
-        due = now + (days * 86400 if days else 600)
+        now = int(time.time())
+        card = one(db, "SELECT days, learning_step, ease, reviews FROM cards WHERE id=? AND state='active'", (card_id,))
+        schedule = review_options(card)[rating]
         change = db.execute("""
-            UPDATE cards SET days=?, due=?, reviews=reviews+1
+            UPDATE cards SET days=?, learning_step=?, ease=?, due=?, reviews=reviews+1
             WHERE id=? AND due<=? AND reviews=?
-        """, (days, due, card_id, now, reviews))
+        """, (schedule.days, schedule.step, schedule.ease, now + schedule.delay, card_id, now, reviews))
         if change.rowcount != 1:
             raise BadRequest("This card was already reviewed on another device.")
     return {}
@@ -317,20 +367,41 @@ def save_chat_cards(data):
     return save_deck(name, anki_import.Deck(cards=[(key, *sides) for key, sides in rows.items()]), "chat")
 
 
-def review_cards(deck_id="", limit=1, after="", practice=False):
+def review_cards(deck_id="", limit=1, after="", practice=False, session=False):
     if deck_id and not re.fullmatch(r"[0-9]{1,16}", deck_id):
         raise BadRequest("Choose a valid deck.")
     if after and not re.fullmatch(r"[0-9]{1,16}", after):
         raise BadRequest("Invalid card position.")
+    now = int(time.time())
     with database() as db:
+        db.execute("BEGIN")
         rows = db.execute("""
-            SELECT cards.id, front, back, evidence, reviews, notes.name, source='anki' AS html
+            SELECT cards.id, front, back, evidence, reviews, notes.name, source='anki' AS html,
+                   days, learning_step, ease
             FROM cards JOIN notes ON notes.id=cards.note
             WHERE state='active' AND (?='' OR notes.id=?)
               AND ((?=0 AND due<=?) OR (?=1 AND cards.id>?))
-            ORDER BY CASE WHEN ?=0 THEN due ELSE 0 END, cards.id LIMIT ?
-        """, (deck_id, deck_id, practice, int(time.time()), practice, int(after or 0), practice, limit))
-        return [dict(row) for row in rows]
+            ORDER BY CASE WHEN ?=0 AND days=0 AND reviews>0 THEN 0 ELSE 1 END,
+                     CASE WHEN ?=0 THEN due ELSE 0 END, cards.id LIMIT ?
+        """, (deck_id, deck_id, practice, now, practice, int(after or 0), practice, practice, limit))
+        cards = []
+        for row in rows:
+            card = dict(row)
+            if not practice:
+                card["intervals"] = {rating: option.delay for rating, option in review_options(row).items()}
+            for key in ("days", "learning_step", "ease"):
+                del card[key]
+            cards.append(card)
+        if not session:
+            return cards
+        wait = None
+        if not cards and not practice:
+            due = db.execute("""
+                SELECT MIN(due) FROM cards WHERE state='active' AND due>? AND (?='' OR note=?)
+            """, (now, deck_id, deck_id)).fetchone()[0]
+            if due is not None:
+                wait = due - now
+        return {"cards": cards, "wait": wait}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -363,7 +434,7 @@ class Handler(BaseHTTPRequestHandler):
         supplied = self.headers.get("Authorization", "").encode("latin-1")
         if hmac.compare_digest(supplied, self.server.authorization):
             return True
-        self.json({"error": "Sign in as study."}, 401, WWW_Authenticate='Basic realm="Home Study"')
+        self.json({"error": "Sign in as study."}, 401, WWW_Authenticate='Basic realm="Mneme"')
         return False
 
     def do_GET(self):
@@ -398,9 +469,10 @@ class Handler(BaseHTTPRequestHandler):
             self.json(result)
         elif path == "/api/review":
             batch = "batch" in params
+            session = "session" in params
             cards = review_cards(params.get("deck", [""])[0], 12 if batch else 1,
-                                 params.get("after", [""])[0], "practice" in params)
-            self.json(cards if batch else next(iter(cards), None))
+                                 params.get("after", [""])[0], "practice" in params, session)
+            self.json(cards if batch or session else next(iter(cards), None))
         elif path == "/api/decks":
             with database() as db:
                 rows = db.execute("""
@@ -426,7 +498,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.serve_media(stream, len(item["content"]), item["mime"])
         elif path == "/anki.tsv":
             self.send(200, anki_export(), "text/tab-separated-values; charset=utf-8",
-                      Content_Disposition='attachment; filename="home-study.tsv"')
+                      Content_Disposition='attachment; filename="mneme.tsv"')
         else:
             self.json({"error": "Page not found."}, 404)
 
@@ -628,7 +700,7 @@ if __name__ == "__main__":
         server.authorization = b"Basic " + b64encode(f"study:{password}".encode())
         server.worker = Worker(url, model, os.environ.get("WOL_MAC", ""), os.environ.get("WOL_BROADCAST", ""))
         server.uploads = Uploads(Path(tempfile.gettempdir()) / "home-study-uploads")
-        print(f"Home Study listening on {server.server_address[0]}:8787", flush=True)
+        print(f"Mneme listening on {server.server_address[0]}:8787", flush=True)
         try:
             server.serve_forever()
         finally:

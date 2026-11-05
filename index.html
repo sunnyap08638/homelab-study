@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Home Study</title>
+  <title>Mneme</title>
   <link rel="stylesheet" href="/study.css">
   <script defer src="/common.js"></script>
   <script defer src="/study.js"></script>
 </head>
 <body>
   <header class="home-header">
-    <div><p class="label">Study workspace</p><h1>Home Study</h1></div>
+    <div><p class="label">Study workspace</p><h1>Mneme</h1></div>
     <nav aria-label="Workspace">
       <a href="#decks">Decks</a>
       <a href="#import">Import</a>
@@ -29,8 +29,8 @@
       <h2>Import an Anki deck</h2>
       <form id="import-deck">
         <label for="deck-file">Anki package or tab-separated export</label>
-        <input id="deck-file" type="file" name="file" accept=".apkg,.tsv,.txt" required>
-        <p>Anki packages can be up to 10 GB.</p>
+        <input id="deck-file" type="file" name="file" accept=".apkg,.tsv,.txt" aria-describedby="deck-file-limit" required>
+        <p id="deck-file-limit"></p>
         <label for="deck-name">Deck name (optional)</label>
         <input id="deck-name" name="name" maxlength="100" placeholder="Defaults to the file name">
         <button>Upload deck</button>
@@ -58,15 +58,16 @@
     </section>
     <section id="card-chat">
       <h2>Flashcard chat</h2>
-      <p>Give directions, paste an excerpt, or attach a PDF. Home Study saves only the cards you choose.</p>
+      <p>Give directions, paste an excerpt, or attach a PDF. Mneme saves only the cards you choose.</p>
       <form id="chat-form" autocomplete="off">
         <label for="chat-directions">What should the cards focus on?</label>
         <textarea id="chat-directions" name="directions" required rows="2" maxlength="1000"
           placeholder="Make five exam questions about the main arguments."></textarea>
         <label for="chat-source">Paste an article or excerpt (optional)</label>
         <textarea id="chat-source" name="source" rows="3" maxlength="3500"></textarea>
-        <label for="chat-file">Or choose a searchable PDF, text, or Markdown file (up to 10 GB)</label>
-        <input id="chat-file" name="file" type="file" accept=".pdf,.txt,.md">
+        <label for="chat-file">Or choose a searchable PDF, text, or Markdown file</label>
+        <p id="chat-file-limit"></p>
+        <input id="chat-file" name="file" type="file" accept=".pdf,.txt,.md" aria-describedby="chat-file-limit">
         <div id="chat-pages" hidden>
           <label for="chat-first">First PDF page</label>
           <input id="chat-first" name="first" type="number" min="1" max="1000000" value="1">

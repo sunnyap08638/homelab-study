@@ -3,7 +3,7 @@
 set -euo pipefail
 
 die() {
-    printf 'Home Study: %s\n' "$*" >&2
+    printf 'Mneme: %s\n' "$*" >&2
     exit 1
 }
 
@@ -90,7 +90,7 @@ if ! kube -n "$namespace" rollout status deployment/home-study --timeout=240s; t
     die "The application did not become ready."
 fi
 kube -n "$namespace" wait --for=jsonpath='{.status.phase}'=Bound pvc/home-study-data --timeout=30s
-printf 'Home Study health: '
+printf 'Mneme health: '
 curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8787/healthz
 printf '\n'
 anki_limit=$(curl --noproxy '*' -fsS --max-time 5 -D - -o /dev/null http://127.0.0.1:8787/healthz |

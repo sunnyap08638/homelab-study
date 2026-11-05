@@ -74,6 +74,9 @@ spec:
               value: "127.0.0.1"
             - name: STUDY_DB
               value: /data/study.sqlite3
+            # Temporary limit for the homelab prototype, in decimal bytes.
+            - name: STUDY_UPLOAD_MAX_BYTES
+              value: "100000000000"
             - name: PYTHONPATH
               value: /deps
             - name: STUDY_PASSWORD
@@ -120,7 +123,7 @@ spec:
             claimName: home-study-data
         - name: imports
           emptyDir:
-            sizeLimit: 20Gi
+            sizeLimit: 200Gi
         - name: dependencies
           emptyDir:
             sizeLimit: 32Mi

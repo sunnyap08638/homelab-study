@@ -17,6 +17,8 @@ from pathlib import Path
 from urllib.parse import unquote
 from zipfile import BadZipFile, ZipFile
 
+from uploads import DISK_RESERVE, MAX_BYTES
+
 try:
     from compression import zstd
 except ImportError:
@@ -239,6 +241,7 @@ def members_are_bounded(upload):
     if directory_size > MAX_PACKAGE_DIRECTORY:
         raise DeckImportError("This package's file index exceeds 16 MiB. Export the deck in smaller packages.")
     upload.seek(0)
+    return length
 
 
 def anki_models(db, modern):
@@ -264,7 +267,7 @@ def anki_models(db, modern):
 
 
 def read_package(upload, folder):
-    members_are_bounded(upload)
+    size = members_are_bounded(upload)
     result = Deck()
     with ZipFile(upload) as archive:
         if len(archive.infolist()) > MAX_PACKAGE_FILES:
@@ -290,8 +293,9 @@ def read_package(upload, folder):
                 assets = {name: key for key, name in json.loads(media_map).items() if re.fullmatch(r"[0-9]+", key)}
         resolved = {}
         total_media = 0
-        media_limit = min(10_000_000_000, max(0, shutil.disk_usage(folder).free - 2048 * MIB))
-        deadline = time.monotonic() + 30 * 60
+        media_limit = min(MAX_BYTES, max(0, shutil.disk_usage(folder).free - DISK_RESERVE))
+        # Keep the baseline timeout and allow more time for the largest archives.
+        deadline = time.monotonic() + max(30 * 60, size // (10 * MIB))
 
         def asset(source, tag):
             nonlocal total_media

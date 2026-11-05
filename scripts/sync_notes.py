@@ -1,4 +1,4 @@
-"""Mirror selected local study folders to the Home Study inbox."""
+"""Mirror selected local study folders to the Mneme inbox."""
 
 import argparse
 import json

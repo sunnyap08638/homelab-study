@@ -27,7 +27,7 @@ if [[ ! $dir =~ ^/tmp/home-study\.[a-zA-Z0-9]+$ ]]; then
     exit 1
 fi
 remote_dir=$dir
-printf 'Uploading the Home Study release.\n'
+printf 'Uploading the Mneme release.\n'
 COPYFILE_DISABLE=1 tar -cf - app.py anki_import.py uploads.py pdf_source.py requirements.txt wake.py index.html review.html \
     common.js study.js review.js study.css \
     kustomization.yaml k8s/app.yaml scripts/bootstrap_homeserver.sh |

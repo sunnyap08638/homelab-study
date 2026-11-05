@@ -29,12 +29,15 @@ class UploadTest(unittest.TestCase):
         self.store.finish(upload)
         self.assertFalse(upload.path.exists())
 
-    def test_accepts_the_ten_gigabyte_boundary_without_preallocating(self):
-        with patch("uploads.shutil.disk_usage", return_value=Mock(free=30_000_000_000)):
-            key = self.store.start(10_000_000_000)["id"]
+    def test_accepts_the_configured_boundary_without_preallocating(self):
+        with patch.object(uploads, "MAX_BYTES", 100_000_000_000), \
+                patch("uploads.shutil.disk_usage", return_value=Mock(free=110_000_000_000)):
+            key = self.store.start(100_000_000_000)["id"]
             self.assertEqual(self.store.get(key).path.stat().st_size, 0)
-            with self.assertRaises(uploads.UploadError):
-                self.store.start(10_000_000_001)
+            with self.assertRaisesRegex(uploads.UploadError, "100 GB"):
+                self.store.start(100_000_000_001)
+            with self.assertRaisesRegex(uploads.UploadError, "enough free disk space"):
+                self.store.start(11_000_000_000)
 
     def test_temporary_source_is_deleted_before_inference_and_only_cards_are_saved(self):
         self.enterContext(patch.dict(os.environ, {"STUDY_DB": str(self.folder / "study.sqlite3")}))

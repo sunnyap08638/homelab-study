@@ -1,10 +1,10 @@
-# Home Study
+# Mneme
 
-Home Study is a single-user flashcard app for a home Kubernetes cluster. Notes and review progress live on the always-on Ubuntu server. Only flashcard generation requests inference from the GPU worker. The app checks for the configured model, sends Wake-on-LAN if the worker is unreachable, and waits up to about 90 seconds for Ollama. It requests immediate model unload after generation.
+Mneme is a single-user flashcard app for a home Kubernetes cluster. Notes and review progress live on the always-on Ubuntu server. Only flashcard generation requests inference from the GPU worker. The app checks for the configured model, sends Wake-on-LAN if the worker is unreachable, and waits up to about 90 seconds for Ollama. It requests immediate model unload after generation.
 
 | Machine | Pilot role |
 | --- | --- |
-| Always-on Ubuntu x86_64 server | K3s control plane and always-on Home Study app |
+| Always-on Ubuntu x86_64 server | K3s control plane and always-on Mneme app |
 | Gaming PC, Windows 11 and RX 7900 XT | Private Ollama endpoint on the wired LAN. Join K3s as a GPU worker after booting Linux. |
 | Spare RX 9060 XT | Optional second Linux inference host after installing the card and checking its VRAM. |
 | Mac with Obsidian | Imports selected Markdown files and extracts text from Goodnotes PDFs. |
@@ -13,14 +13,15 @@ GPU workers serve separate requests. Ordinary Kubernetes scheduling and this Oll
 
 ## What you can do
 
-- **Import an Anki deck.** Upload a modern or legacy `.apkg`, or a tab-separated text export with front and back in the first two columns. Anki packages can contain up to 75,000 cards and 100,000 ZIP entries, with a 10 GB upload limit. Tab-separated text exports support up to 5,000 cards and 64 MiB. It supports common Basic, reversed, and simple cloze cards, plus up to 10 GB of unpacked media in supported formats. It reports skipped cards and unavailable media. Custom scripts, styling, image occlusion, and Anki review history stay outside this import. [Anki deck export](https://docs.ankiweb.net/exporting.html)
-- **Study on any authorized device.** Choose a deck from the home page to open a dedicated review screen. Use **Show answer** to flip the card or choose **Browse** to see every card without changing its schedule. Again schedules a ten-minute retry. Good starts at one day and doubles the interval up to a year. The server saves graded reviews across devices using the same study account.
-- **Keep reviews responsive.** The browser loads up to 12 cards at a time, keeps that batch in memory, and preloads the next card’s first question image. Use Space to reveal the answer, 1 or 2 to rate it, or Right Arrow to advance in browse mode. Reviews require a connection.
+- **Import an Anki deck.** Upload a modern or legacy `.apkg`, or a tab-separated text export with front and back in the first two columns. Anki packages can contain up to 75,000 cards and 100,000 ZIP entries. The configured upload limit also caps total extracted media. Tab-separated text exports support up to 5,000 cards and 64 MiB. The importer supports common Basic, reversed, and simple cloze cards. It reports skipped cards and unavailable media. Custom scripts, styling, image occlusion, and Anki review history stay outside this import. [Anki deck export](https://docs.ankiweb.net/exporting.html)
+- **Study on any authorized device.** Choose a deck and flip a card to see **Again**, **Hard**, **Good**, and **Easy** with their next intervals. Choose **Browse** to see every card without changing its schedule. Graded reviews follow the study account across devices.
+- **Spaced repetition.** Mneme uses fixed SM-2-style settings with 1- and 10-minute learning steps. Good graduates the card at one day, while Easy can graduate it at four days. Missing a graduated card starts a 10-minute relearning step. Graduated cards start at 250% ease and have a one-year interval cap. Existing due dates are preserved on upgrade. [Anki scheduling rules](https://faqs.ankiweb.net/what-spaced-repetition-algorithm.html)
+- **Keep reviews responsive.** The browser loads up to 12 cards at a time and preloads the next card’s first question image. Use Space to reveal the answer, 1–4 to rate it, or Right Arrow to advance in browse mode. Reviews require a connection.
 - **Turn notes into cards.** Paste or upload text and Markdown, or use the Mac bridge for Obsidian and Goodnotes. Choose a note section, generate up to five drafts with Ollama, and edit or approve each card with its source excerpt visible.
-- **Flashcard chat.** Give directions, paste an article excerpt, or choose a PDF, text, or Markdown file up to 10 GB. Select up to six PDF pages. Ollama uses up to 3,500 characters per request. Searchable PDFs work directly, while scans need OCR text. PDF uploads are deleted after extraction, and text files send only their opening excerpt. A follow-up uses the visible drafts. Select and edit the cards you want to save. The chat directions, excerpts, and drafts are not kept in the study library.
+- **Flashcard chat.** Give directions, paste an article excerpt, or choose a PDF, text, or Markdown file within the configured upload limit. Select up to six PDF pages. Ollama uses up to 3,500 characters per request. Searchable PDFs work directly, while scans need OCR text. PDF uploads are deleted after extraction, and text files send only their opening excerpt. A follow-up uses the visible drafts. Select and edit the cards you want to save. The chat directions, excerpts, and drafts are not kept in the study library.
 - **Export to Anki.** Download active cards as a two-column TSV. The TSV exports card text. Source media and scheduling history are stored separately.
 
-Reuploading an Anki package under the same deck name updates matching card content and keeps Home Study review progress. Imported cards begin with a fresh schedule. Decks, media, and progress live on the Ubuntu server, so the gaming PC can sleep during import, browsing, review, and export.
+Reuploading an Anki package under the same deck name updates matching card content and keeps Mneme review progress. Imported cards begin with a fresh schedule. Decks, media, and progress live on the Ubuntu server, so the gaming PC can sleep during import, browsing, review, and export.
 
 The pilot uses a single study account. For a wider release, separate users and decks before opening access. The web app can move to a hosted container with managed PostgreSQL and object storage for media. Inference can remain on a private GPU worker or move to a hosted provider with its own queue and credentials.
 
@@ -57,6 +58,8 @@ sudo tailscale serve --bg --https=8443 http://127.0.0.1:8787
 For an outside user, share the server only after verifying that the share grants access to the app port. Keep SSH and Kubernetes admin access restricted to administrators. [Tailscale machine sharing and access rules](https://tailscale.com/docs/features/sharing#sharing-and-access-control-policies)
 
 The single app replica uses host networking for wake packets and listens on Ubuntu loopback. The SQLite database and imported media files live in the local-path PVC on Ubuntu. The PVC requests 2 GiB, while this provisioner uses available disk space without enforcing that number as a quota. Keep backups of both SQLite and the adjacent `study-media` directory. Large uploads stream in 8 MiB chunks and can resume from the last completed chunk in the same tab. Temporary uploads live on disk outside the persistent volume and idle uploads expire after one hour. Deck import preserves extracted cards and media and removes the original archive. [K3s persistent storage](https://docs.k3s.io/add-ons/storage)
+
+The homelab deployment temporarily sets `STUDY_UPLOAD_MAX_BYTES` to 100 GB (100,000,000,000 bytes) per Anki package or chat source. Remove the override from `k8s/app.yaml` and redeploy to restore the 10 GB default. A deck import needs free space for both the staged archive and the extracted media. [Kubernetes temporary storage](https://kubernetes.io/docs/concepts/storage/volumes/#emptydir)
 
 ## 1. Benchmark Qwen on the gaming PC
 

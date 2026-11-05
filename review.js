@@ -9,8 +9,8 @@ const title = document.getElementById("session-title");
 const modeSwitch = document.getElementById("session-switch");
 const reveal = document.getElementById("show-answer");
 const hide = document.getElementById("show-question");
-const again = document.getElementById("again");
-const good = document.getElementById("good");
+const ratingActions = document.getElementById("rating-actions");
+const ratings = Array.from(ratingActions.querySelectorAll("button"));
 const next = document.getElementById("next-card");
 const retry = document.getElementById("retry-review");
 let queue = [];
@@ -18,6 +18,7 @@ let after = 0;
 let completed = 0;
 let total = 0;
 let pending = false;
+let wakeTimer;
 
 function cardSide(card, side) {
   const element = node("div");
@@ -26,6 +27,11 @@ function cardSide(card, side) {
   if (card.html) element.innerHTML = card[side];
   else element.textContent = card[side];
   return element;
+}
+
+function intervalLabel(seconds) {
+  if (seconds >= 86400) return (seconds / 86400) + (seconds === 86400 ? " day" : " days");
+  return Math.ceil(seconds / 60) + " min";
 }
 
 function showFace(answer, moveFocus = true) {
@@ -39,12 +45,17 @@ function showFace(answer, moveFocus = true) {
   reveal.hidden = answer;
   hide.hidden = !answer;
   next.hidden = !answer || !practice;
-  again.hidden = good.hidden = !answer || practice;
+  ratingActions.hidden = !answer || practice;
+  if (!ratingActions.hidden) {
+    for (const button of ratings) {
+      button.querySelector("small").textContent = intervalLabel(card.intervals[button.dataset.rating]);
+    }
+  }
   if (moveFocus) (answer ? stage : reveal).focus({ preventScroll: true });
 }
 
 function showMessage(message) {
-  face.hidden = reveal.hidden = hide.hidden = again.hidden = good.hidden = next.hidden = true;
+  face.hidden = reveal.hidden = hide.hidden = ratingActions.hidden = next.hidden = true;
   cardPanel.replaceChildren(node("p", message));
 }
 
@@ -57,21 +68,33 @@ function prefetchQuestion(card) {
 }
 
 async function loadCard(moveFocus = false) {
+  clearTimeout(wakeTimer);
   retry.hidden = true;
+  let wait;
   if (!queue.length) {
     showMessage("Loading cards…");
-    const query = new URLSearchParams({ batch: "1", deck });
+    const query = new URLSearchParams({ batch: "1", session: "1", deck });
     if (practice) {
       query.set("practice", "1");
       query.set("after", after);
     }
-    queue = await api("/api/review?" + query);
+    const result = await api("/api/review?" + query);
+    queue = result.cards;
+    wait = result.wait;
   }
   const card = queue[0];
   if (!card) {
     progress.textContent = completed ? completed + (practice ? " browsed" : " reviewed") : "";
     showMessage(practice ? "End of this deck." : "You’re caught up.");
-    if (moveFocus) stage.focus({ preventScroll: true });
+    if (!practice) {
+      retry.textContent = "Check for due cards";
+      retry.hidden = false;
+      if (wait > 0 && wait <= 15 * 60) {
+        cardPanel.append(node("p", "Next card in about " + intervalLabel(wait) + "."));
+        wakeTimer = setTimeout(() => start(), wait * 1000);
+      }
+    }
+    if (moveFocus) (practice ? stage : retry).focus({ preventScroll: true });
     return;
   }
   progress.textContent = practice
@@ -87,6 +110,7 @@ async function loadOrRetry(moveFocus) {
   } catch (error) {
     showMessage("Couldn’t load cards.");
     status.textContent = error.message;
+    retry.textContent = "Try again";
     retry.hidden = false;
     if (moveFocus) retry.focus({ preventScroll: true });
   }
@@ -97,7 +121,8 @@ async function advance(rating) {
   pending = true;
   status.textContent = "";
   const card = queue[0];
-  for (const button of [hide, again, good, next]) button.disabled = true;
+  const controls = [hide, ...ratings, next];
+  for (const button of controls) button.disabled = true;
   try {
     if (!practice) await api("/api/cards/" + card.id + "/review", { rating, reviews: card.reviews });
     after = card.id;
@@ -111,7 +136,7 @@ async function advance(rating) {
     }
     status.textContent = error.message;
   } finally {
-    for (const button of [hide, again, good, next]) button.disabled = false;
+    for (const button of controls) button.disabled = false;
     pending = false;
   }
 }
@@ -132,6 +157,7 @@ async function start(moveFocus = false) {
     } catch (error) {
       showMessage("Couldn’t load the deck.");
       status.textContent = error.message;
+      retry.textContent = "Try again";
       retry.hidden = false;
       return;
     }
@@ -147,8 +173,9 @@ modeSwitch.textContent = practice ? "Review due" : "Browse all";
 reveal.addEventListener("click", () => showFace(true));
 hide.addEventListener("click", () => showFace(false));
 next.addEventListener("click", () => advance());
-again.addEventListener("click", () => advance("again"));
-good.addEventListener("click", () => advance("good"));
+for (const button of ratings) {
+  button.addEventListener("click", () => advance(button.dataset.rating));
+}
 retry.addEventListener("click", async () => {
   retry.disabled = true;
   await start(true);
@@ -161,8 +188,7 @@ document.addEventListener("keydown", event => {
   if (event.target.closest("input, textarea, select, audio, [contenteditable]")) return;
   let button;
   if (event.key === " " && !event.target.closest("button, a")) button = reveal;
-  if (event.key === "1") button = again;
-  if (event.key === "2") button = good;
+  if (!ratingActions.hidden && /^[1-4]$/.test(event.key)) button = ratings[Number(event.key) - 1];
   if (event.key === "ArrowRight") button = next;
   if (button && !button.hidden && !button.disabled) {
     event.preventDefault();
