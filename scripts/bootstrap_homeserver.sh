@@ -93,6 +93,10 @@ kube -n "$namespace" wait --for=jsonpath='{.status.phase}'=Bound pvc/home-study-
 printf 'Home Study health: '
 curl --noproxy '*' -fsS --max-time 5 http://127.0.0.1:8787/healthz
 printf '\n'
+anki_limit=$(curl --noproxy '*' -fsS --max-time 5 -D - -o /dev/null http://127.0.0.1:8787/healthz |
+    awk 'tolower($1) == "x-home-study-anki-package-max-bytes:" { sub(/\r$/, "", $2); print $2 }')
+[[ $anki_limit =~ ^[0-9]+$ ]] || die "The live app did not report its Anki package limit."
+printf 'Live Anki package limit: %s bytes\n' "$anki_limit"
 kube get node "$node" -o wide
 kube -n "$namespace" get deployment/home-study pvc/home-study-data
 printf 'App username: study. Retrieve the password directly on the server using the README.\n'

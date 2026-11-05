@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import anki_import
-from uploads import UploadError, Uploads
+from uploads import MAX_BYTES, UploadError, Uploads
 from wake import Worker, WorkerUnavailable
 
 ROOT = Path(__file__).resolve().parent
@@ -370,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
         route = urlsplit(self.path)
         try:
             if route.path == "/healthz":
-                self.json({"ok": True})
+                self.json({"ok": True}, X_Home_Study_Anki_Package_Max_Bytes=str(MAX_BYTES))
             elif self.authorized():
                 self.get(route.path, parse_qs(route.query))
         except (BadRequest, UploadError) as error:

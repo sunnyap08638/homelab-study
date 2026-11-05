@@ -19,16 +19,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-ssh -M -S "$socket" -o ControlPersist=20m -fN -- "$target"
+printf 'Connecting to %s. SSH may prompt for your password.\n' "$target"
+ssh -M -S "$socket" -o ConnectTimeout=15 -o ControlPersist=20m -fN -- "$target"
 dir=$(ssh -S "$socket" -o BatchMode=yes -- "$target" 'mktemp -d /tmp/home-study.XXXXXX')
 if [[ ! $dir =~ ^/tmp/home-study\.[a-zA-Z0-9]+$ ]]; then
     printf 'Unexpected temporary directory from %s.\n' "$target" >&2
     exit 1
 fi
 remote_dir=$dir
+printf 'Uploading the Home Study release.\n'
 COPYFILE_DISABLE=1 tar -cf - app.py anki_import.py uploads.py pdf_source.py requirements.txt wake.py index.html study.js study.css \
     kustomization.yaml k8s/app.yaml scripts/bootstrap_homeserver.sh |
     ssh -S "$socket" -o BatchMode=yes -- "$target" "tar -xf - -C '$remote_dir'"
+printf 'Applying the release. Ubuntu may prompt for your sudo password.\n'
 ssh -t -S "$socket" -o BatchMode=yes -- "$target" "cd '$remote_dir' && sudo -- bash scripts/bootstrap_homeserver.sh"
 
 printf '\nOpen a new terminal for the app tunnel.\n'
