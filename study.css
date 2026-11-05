@@ -20,3 +20,6 @@ blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid GrayT
 .card-side img { height: auto; }
 .card-side table { border-collapse: collapse; }
 .card-side th, .card-side td { border: 1px solid GrayText; padding: .25rem; }
+#card-chat { grid-column: 1 / -1; }
+#chat-save { margin-top: 1rem; }
+#chat-drafts input[type=checkbox] { display: inline-block; width: auto; }

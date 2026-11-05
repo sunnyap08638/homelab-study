@@ -8,6 +8,9 @@ configMapGenerator:
     files:
       - app.py
       - anki_import.py
+      - uploads.py
+      - pdf_source.py
+      - requirements.txt
       - wake.py
       - index.html
       - study.js

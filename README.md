@@ -1,6 +1,6 @@
 # Home Study
 
-Home Study is a single-user flashcard app for a home Kubernetes cluster. Notes and review progress live on the always-on Ubuntu server. Only **Generate draft cards** requests inference from the GPU worker. The app checks for the configured model, sends Wake-on-LAN if the worker is unreachable, and waits up to about 90 seconds for Ollama. It requests immediate model unload after generation.
+Home Study is a single-user flashcard app for a home Kubernetes cluster. Notes and review progress live on the always-on Ubuntu server. Only flashcard generation requests inference from the GPU worker. The app checks for the configured model, sends Wake-on-LAN if the worker is unreachable, and waits up to about 90 seconds for Ollama. It requests immediate model unload after generation.
 
 | Machine | Pilot role |
 | --- | --- |
@@ -13,10 +13,11 @@ GPU workers serve separate requests. Ordinary Kubernetes scheduling and this Oll
 
 ## What you can do
 
-- **Import an Anki deck.** Upload a modern or legacy `.apkg`, or a tab-separated text export with front and back in the first two columns. Home Study accepts up to 5,000 cards and 64 MiB per upload. It supports common Basic, reversed, and simple cloze cards, plus embedded images and audio in supported formats. It reports skipped cards and unavailable media. Custom scripts, styling, image occlusion, and Anki review history stay outside this import. [Anki deck export](https://docs.ankiweb.net/exporting.html)
+- **Import an Anki deck.** Upload a modern or legacy `.apkg`, or a tab-separated text export with front and back in the first two columns. Home Study accepts up to 5,000 cards per deck, with a 10 GB cap for packages and a 64 MiB cap for tab-separated text exports. It supports common Basic, reversed, and simple cloze cards, plus up to 10 GB of unpacked media in supported formats. It reports skipped cards and unavailable media. Custom scripts, styling, image occlusion, and Anki review history stay outside this import. [Anki deck export](https://docs.ankiweb.net/exporting.html)
 - **Study on any authorized device.** Pick a deck and review the cards that are due, or browse every card without changing its schedule. Again schedules a ten-minute retry. Good starts at one day and doubles the interval up to a year. The server saves progress, so it follows you across devices using the same study account.
 - **Keep reviews responsive.** The browser loads up to 12 cards at a time, keeps that batch in memory, and preloads a couple of images for the next card. Reviews save to the server as you go and require a connection.
 - **Turn notes into cards.** Paste or upload text and Markdown, or use the Mac bridge for Obsidian and Goodnotes. Choose a note section, generate up to five drafts with Ollama, and edit or approve each card with its source excerpt visible.
+- **Flashcard chat.** Give directions, paste an article excerpt, or choose a PDF, text, or Markdown file up to 10 GB. Select up to six PDF pages. Ollama uses up to 3,500 characters per request. Searchable PDFs work directly, while scans need OCR text. PDF uploads are deleted after extraction, and text files send only their opening excerpt. A follow-up uses the visible drafts. Select and edit the cards you want to save. The chat directions, excerpts, and drafts are not kept in the study library.
 - **Export to Anki.** Download active cards as a two-column TSV. The TSV exports card text. Source media and scheduling history are stored separately.
 
 Reuploading an Anki package under the same deck name updates matching card content and keeps Home Study review progress. Imported cards begin with a fresh schedule. Decks, media, and progress live on the Ubuntu server, so the gaming PC can sleep during import, browsing, review, and export.
@@ -55,7 +56,7 @@ sudo tailscale serve --bg --https=8443 http://127.0.0.1:8787
 
 For an outside user, share the server only after verifying that the share grants access to the app port. Keep SSH and Kubernetes admin access restricted to administrators. [Tailscale machine sharing and access rules](https://tailscale.com/docs/features/sharing#sharing-and-access-control-policies)
 
-The single app replica uses host networking for wake packets and listens on Ubuntu loopback. The SQLite database lives in a local-path PVC. Save periodic backups using SQLite's online backup command. [K3s persistent storage](https://docs.k3s.io/add-ons/storage)
+The single app replica uses host networking for wake packets and listens on Ubuntu loopback. The SQLite database and imported media files live in the local-path PVC on Ubuntu. The PVC requests 2 GiB, while this provisioner uses available disk space without enforcing that number as a quota. Keep backups of both SQLite and the adjacent `study-media` directory. Large uploads stream in 8 MiB chunks and can resume from the last completed chunk in the same tab. Temporary uploads live on disk outside the persistent volume and idle uploads expire after one hour. Deck import preserves extracted cards and media and removes the original archive. [K3s persistent storage](https://docs.k3s.io/add-ons/storage)
 
 ## 1. Benchmark Qwen on the gaming PC
 
@@ -147,6 +148,6 @@ Verify GPU offload again. Then update the app's `OLLAMA_URL` to `http://ollama-a
 
 ## Local development
 
-With Python 3.14 and any reachable local Ollama endpoint, set `STUDY_PASSWORD` and optionally `OLLAMA_URL` and `OLLAMA_MODEL`, then run `python3 app.py`. Open `http://127.0.0.1:8787`. The default database is `study.sqlite3` in the working directory. If inference is unavailable, note import and flashcard review remain available.
+With Python 3.14, install `python3 -m pip install --require-hashes -r requirements.txt` for PDF extraction. For generation, use a reachable Ollama endpoint. Set `STUDY_PASSWORD` and optionally `OLLAMA_URL` and `OLLAMA_MODEL`, then run `python3 app.py`. Open `http://127.0.0.1:8787`. The default database is `study.sqlite3` in the working directory. If inference is unavailable, note import and flashcard review remain available.
 
 Run the offline tests with `python3 -m unittest discover -s tests -v`. They use temporary databases and a mock Ollama worker to cover Anki import, review scheduling, draft generation, and wake retries.

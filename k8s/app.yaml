@@ -42,6 +42,29 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: pdf-dependency
+          image: python:3.14-slim
+          command: [python, -m, pip, install, --disable-pip-version-check, --no-cache-dir, --no-deps,
+                    '--only-binary=:all:', --require-hashes, --target, /deps, -r, /app/requirements.txt]
+          resources:
+            requests:
+              memory: 32Mi
+            limits:
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            - name: dependencies
+              mountPath: /deps
+            - name: imports
+              mountPath: /tmp
       containers:
         - name: app
           image: python:3.14-slim
@@ -51,6 +74,8 @@ spec:
               value: "127.0.0.1"
             - name: STUDY_DB
               value: /data/study.sqlite3
+            - name: PYTHONPATH
+              value: /deps
             - name: STUDY_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -69,7 +94,7 @@ spec:
               cpu: 25m
               memory: 48Mi
             limits:
-              memory: 256Mi
+              memory: 512Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -83,6 +108,9 @@ spec:
               mountPath: /data
             - name: imports
               mountPath: /tmp
+            - name: dependencies
+              mountPath: /deps
+              readOnly: true
       volumes:
         - name: code
           configMap:
@@ -92,4 +120,7 @@ spec:
             claimName: home-study-data
         - name: imports
           emptyDir:
-            sizeLimit: 160Mi
+            sizeLimit: 20Gi
+        - name: dependencies
+          emptyDir:
+            sizeLimit: 32Mi

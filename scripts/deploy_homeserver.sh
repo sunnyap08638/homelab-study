@@ -26,7 +26,7 @@ if [[ ! $dir =~ ^/tmp/home-study\.[a-zA-Z0-9]+$ ]]; then
     exit 1
 fi
 remote_dir=$dir
-COPYFILE_DISABLE=1 tar -cf - app.py anki_import.py wake.py index.html study.js study.css \
+COPYFILE_DISABLE=1 tar -cf - app.py anki_import.py uploads.py pdf_source.py requirements.txt wake.py index.html study.js study.css \
     kustomization.yaml k8s/app.yaml scripts/bootstrap_homeserver.sh |
     ssh -S "$socket" -o BatchMode=yes -- "$target" "tar -xf - -C '$remote_dir'"
 ssh -t -S "$socket" -o BatchMode=yes -- "$target" "cd '$remote_dir' && sudo -- bash scripts/bootstrap_homeserver.sh"

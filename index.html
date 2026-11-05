@@ -26,9 +26,11 @@
         <form id="import-deck">
           <label for="deck-file">Anki package or tab-separated export</label>
           <input id="deck-file" type="file" name="file" accept=".apkg,.tsv,.txt" required>
+          <p>Anki packages can be up to 10 GB.</p>
           <label for="deck-name">Deck name (optional)</label>
           <input id="deck-name" name="name" maxlength="100" placeholder="Defaults to the file name">
           <button>Upload deck</button>
+          <button type="button" class="cancel-upload" hidden>Cancel upload</button>
         </form>
       </details>
     </section>
@@ -50,6 +52,35 @@
         </form>
       </details>
       <div id="selected-note"></div>
+    </section>
+    <section id="card-chat">
+      <h2>Flashcard chat</h2>
+      <p>Give directions, paste an excerpt, or attach a PDF. Home Study saves only the cards you choose.</p>
+      <form id="chat-form" autocomplete="off">
+        <label for="chat-directions">What should the cards focus on?</label>
+        <textarea id="chat-directions" name="directions" required rows="2" maxlength="1000"
+          placeholder="Make five exam questions about the main arguments."></textarea>
+        <label for="chat-source">Paste an article or excerpt (optional)</label>
+        <textarea id="chat-source" name="source" rows="3" maxlength="3500"></textarea>
+        <label for="chat-file">Or choose a searchable PDF, text, or Markdown file (up to 10 GB)</label>
+        <input id="chat-file" name="file" type="file" accept=".pdf,.txt,.md">
+        <div id="chat-pages" hidden>
+          <label for="chat-first">First PDF page</label>
+          <input id="chat-first" name="first" type="number" min="1" max="1000000" value="1">
+          <label for="chat-last">Last page (optional)</label>
+          <input id="chat-last" name="last" type="number" min="1" max="1000000">
+        </div>
+        <button>Generate drafts</button>
+        <button type="button" class="cancel-upload" hidden>Cancel upload</button>
+      </form>
+      <form id="chat-save" hidden>
+        <p>Review the drafts below. Send a follow-up to revise them, or save the cards you select.</p>
+        <div id="chat-drafts"></div>
+        <label for="chat-deck">Save to a deck</label>
+        <input id="chat-deck" name="name" required maxlength="100" value="Chat cards">
+        <button>Save selected cards</button>
+        <button id="clear-chat-drafts" type="button">Clear drafts</button>
+      </form>
     </section>
   </main>
   <p id="status" role="status" aria-live="polite"></p>

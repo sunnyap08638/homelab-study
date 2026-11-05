@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import re
+import shutil
 import sqlite3
 import struct
 import time
@@ -207,15 +208,28 @@ def member(archive, key, compressed, limit):
 
 
 def members_are_bounded(upload):
-    # Reject ZIP64 and oversized directories before ZipFile allocates one object per member.
+    # Bound the central directory before ZipFile loads it into memory.
     upload.seek(0, io.SEEK_END)
     length = upload.tell()
-    upload.seek(max(0, length - 65_557))
+    start = max(0, length - 65_557)
+    upload.seek(start)
     tail = upload.read()
     marker = tail.rfind(b"PK\x05\x06")
     if marker < 0 or len(tail) - marker < 22:
         raise DeckImportError("This file is not an Anki deck package.")
     entries, directory_size = struct.unpack_from("<HI", tail, marker + 10)
+    if start + marker >= 20:
+        upload.seek(start + marker - 20)
+        locator = upload.read(20)
+        if locator.startswith(b"PK\x06\x07"):
+            record_offset = struct.unpack_from("<Q", locator, 8)[0]
+            if record_offset + 56 > start + marker - 20:
+                raise DeckImportError("Invalid ZIP64 directory.")
+            upload.seek(record_offset)
+            record = upload.read(56)
+            if len(record) != 56 or not record.startswith(b"PK\x06\x06"):
+                raise DeckImportError("Invalid ZIP64 directory.")
+            entries, directory_size = struct.unpack_from("<QQ", record, 32)
     if entries > 12_000 or directory_size > 2 * MIB:
         raise DeckImportError("The package has too many files.")
     upload.seek(0)
@@ -255,7 +269,7 @@ def read_package(upload, folder):
             raise DeckImportError("This package does not contain an Anki collection.")
         db_path = folder / "anki.sqlite3"
         with db_path.open("wb") as target:
-            for chunk in member(archive, collection, modern, 32 * MIB):
+            for chunk in member(archive, collection, modern, 128 * MIB):
                 target.write(chunk)
 
         assets = {}
@@ -268,6 +282,8 @@ def read_package(upload, folder):
                 assets = {name: key for key, name in json.loads(media_map).items() if re.fullmatch(r"[0-9]+", key)}
         resolved = {}
         total_media = 0
+        media_limit = min(10_000_000_000, max(0, shutil.disk_usage(folder).free - 2048 * MIB))
+        deadline = time.monotonic() + 30 * 60
 
         def asset(source, tag):
             nonlocal total_media
@@ -281,15 +297,22 @@ def read_package(upload, folder):
                 if key not in names:
                     result.missing.add(name)
                     return None
-                data = b"".join(member(archive, key, modern, 8 * MIB))
-                digest = hashlib.sha256(mime.encode() + b"\0" + data).hexdigest()
+                hashed = hashlib.sha256(mime.encode() + b"\0")
+                incoming = folder / "current-media"
+                with incoming.open("wb") as target:
+                    for chunk in member(archive, key, modern, min(2048 * MIB, media_limit - total_media)):
+                        if time.monotonic() > deadline:
+                            raise DeckImportError("This deck took too long to process.")
+                        hashed.update(chunk)
+                        target.write(chunk)
+                digest = hashed.hexdigest()
                 if digest not in result.media:
-                    total_media += len(data)
-                    if total_media > 48 * MIB:
-                        raise DeckImportError("This deck exceeds the 48 MiB unpacked media limit.")
+                    total_media += incoming.stat().st_size
                     path = folder / digest
-                    path.write_bytes(data)
+                    incoming.replace(path)
                     result.media[digest] = (mime, path)
+                else:
+                    incoming.unlink()
                 resolved[name] = digest
             return "/api/media/" + resolved[name]
 
@@ -301,7 +324,6 @@ def read_package(upload, folder):
 
             db.create_collation("unicase", unicase)
             db.execute("PRAGMA trusted_schema=OFF")
-            deadline = time.monotonic() + 40
             db.set_progress_handler(lambda: int(time.monotonic() > deadline), 10_000)
             models = anki_models(db, modern)
             total_text = 0
