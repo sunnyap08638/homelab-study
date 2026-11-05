@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Home Study</title>
+  <link rel="stylesheet" href="/study.css">
+  <script defer src="/study.js"></script>
+</head>
+<body>
+  <header>
+    <div><p class="label">HOME LAB</p><h1>Home Study</h1></div>
+    <a href="/anki.tsv" download>Export to Anki</a>
+  </header>
+  <main>
+    <section id="review">
+      <h2>Due for review</h2>
+      <div id="review-card"></div>
+      <button id="load-review">Refresh review</button>
+    </section>
+    <section>
+      <h2>Notes</h2>
+      <label for="notes">Synced notes</label>
+      <select id="notes"><option value="">Choose a note</option></select>
+      <button id="open-note">Open note</button>
+      <details>
+        <summary>Paste a note</summary>
+        <form id="import-note">
+          <label for="name">Title</label>
+          <input id="name" name="name" required maxlength="512">
+          <label for="body">Text</label>
+          <textarea id="body" name="body" rows="5" required maxlength="160000"></textarea>
+          <button>Import note</button>
+        </form>
+      </details>
+      <div id="selected-note"></div>
+    </section>
+  </main>
+  <p id="status" role="status" aria-live="polite"></p>
+</body>
+</html>

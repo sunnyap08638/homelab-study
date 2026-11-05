@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-amd
+  namespace: home-study
+spec:
+  selector:
+    app: ollama-amd
+  ports:
+    - port: 11434
+      targetPort: api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama-amd
+  namespace: home-study
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: ollama-amd
+  template:
+    metadata:
+      labels:
+        app: ollama-amd
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector:
+        homelab-role: gpu-7900xt
+      tolerations:
+        # This workload can only run on the configured worker and its local model cache.
+        - key: node.kubernetes.io/not-ready
+          operator: Exists
+          effect: NoExecute
+        - key: node.kubernetes.io/unreachable
+          operator: Exists
+          effect: NoExecute
+      containers:
+        - name: ollama
+          image: ollama/ollama:rocm
+          env:
+            - name: OLLAMA_NO_CLOUD
+              value: "1"
+            - name: OLLAMA_CONTEXT_LENGTH
+              value: "4096"
+            - name: OLLAMA_NUM_PARALLEL
+              value: "1"
+          ports:
+            - name: api
+              containerPort: 11434
+          readinessProbe:
+            httpGet:
+              path: /api/tags
+              port: api
+          resources:
+            limits:
+              amd.com/gpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: models
+              mountPath: /root/.ollama
+      volumes:
+        - name: models
+          hostPath:
+            path: /var/lib/homelab/ollama
+            type: DirectoryOrCreate

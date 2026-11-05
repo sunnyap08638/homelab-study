@@ -1,0 +1,90 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: home-study
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: home-study-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: home-study
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: home-study
+  template:
+    metadata:
+      labels:
+        app: home-study
+    spec:
+      nodeSelector:
+        homelab-role: always-on
+      # LAN broadcast for Wake-on-LAN and host loopback for private HTTPS/SSH.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: python:3.12-slim
+          command: [python, -B, /app/app.py]
+          env:
+            - name: STUDY_BIND
+              value: "127.0.0.1"
+            - name: STUDY_DB
+              value: /data/study.sqlite3
+            - name: STUDY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: home-study-auth
+                  key: password
+          envFrom:
+            - configMapRef:
+                name: home-study-worker
+                optional: true
+          readinessProbe:
+            exec:
+              command: [python, -c, "from urllib.request import urlopen; urlopen('http://127.0.0.1:8787/healthz', timeout=1).close()"]
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 25m
+              memory: 48Mi
+            limits:
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: code
+              mountPath: /app
+              readOnly: true
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: code
+          configMap:
+            name: home-study-code
+        - name: data
+          persistentVolumeClaim:
+            claimName: home-study-data

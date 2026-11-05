@@ -1,0 +1,17 @@
+:root { color-scheme: light dark; font: 17px/1.5 system-ui, sans-serif; }
+body { margin: 0 auto; max-width: 68rem; padding: 1rem; }
+header { display: flex; align-items: end; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+h1, h2, h3, p { margin: 0 0 .5rem; }
+.label { margin: 0; font-size: .75rem; letter-spacing: .13em; }
+main { display: grid; gap: 1rem; align-items: start; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+section { padding: 1rem; border: 1px solid GrayText; border-radius: .6rem; min-width: 0; }
+button, select, input, textarea { font: inherit; color: inherit; }
+button, select { padding: .45rem .6rem; margin: .25rem .4rem .25rem 0; max-width: 100%; }
+textarea, input { display: block; box-sizing: border-box; width: 100%; margin-bottom: .5rem; padding: .35rem; }
+details, article, #selected-note { margin-top: .75rem; }
+article { border-top: 1px solid GrayText; padding-top: .75rem; }
+pre, blockquote { white-space: pre-wrap; overflow-wrap: anywhere; }
+pre { max-height: 20rem; overflow: auto; }
+blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid GrayText; }
+#status { position: sticky; bottom: 0; padding: .5rem; background: Canvas; }
+@media (max-width: 48rem) { main { grid-template-columns: 1fr; } }
