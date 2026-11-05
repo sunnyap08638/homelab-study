@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import sqlite3
 import tempfile
@@ -45,6 +46,35 @@ class DeckImportTest(unittest.TestCase):
         )
         self.assertEqual(html, "<b>Safe</b>[Media unavailable]")
         self.assertEqual(attempted, [("https://example.com/pixel", "img")])
+
+    def test_large_zip64_package_imports_more_than_five_thousand_cards(self):
+        collection = self.folder / "large-collection.sqlite3"
+        db = sqlite3.connect(collection)
+        try:
+            db.executescript("""
+                CREATE TABLE col (models TEXT);
+                CREATE TABLE notes (id INTEGER PRIMARY KEY, guid TEXT, mid INTEGER, flds TEXT, tags TEXT);
+                CREATE TABLE cards (id INTEGER PRIMARY KEY, nid INTEGER, ord INTEGER);
+            """)
+            model = {"flds": [{"ord": 0, "name": "Front"}, {"ord": 1, "name": "Back"}],
+                     "tmpls": [{"ord": 0, "qfmt": "{{Front}}", "afmt": "{{Back}}"}]}
+            db.execute("INSERT INTO col VALUES (?)", (json.dumps({"1": model}),))
+            db.executemany("INSERT INTO notes VALUES (?, ?, 1, ?, '')", (
+                (number, str(number), f"Question {number}\x1fAnswer") for number in range(5001)
+            ))
+            db.execute("INSERT INTO cards SELECT id, id, 0 FROM notes")
+            db.commit()
+        finally:
+            db.close()
+
+        package = self.folder / "large.apkg"
+        with ZipFile(package, "w") as archive:
+            archive.write(collection, "collection.anki2")
+            for number in range(66_000):
+                archive.writestr(str(number), b"")
+        with package.open("rb") as upload:
+            deck = anki_import.read_deck(upload, ".apkg", self.folder)
+        self.assertEqual(app.save_deck("Large deck", deck)["imported"], 5001)
 
     @unittest.skipUnless(anki_import.zstd is not None, "Python 3.14 required for modern Anki packages")
     def test_modern_collection_uses_cloze_and_ignores_unused_fields(self):

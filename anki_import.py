@@ -27,6 +27,10 @@ ZSTD_ERRORS = (zstd.ZstdError,) if zstd is not None else ()
 MIB = 1024 ** 2
 UPLOAD_LIMIT = 64 * MIB
 MAX_CARDS = 5000
+MAX_PACKAGE_FILES = 100_000
+MAX_PACKAGE_DIRECTORY = 16 * MIB
+MAX_PACKAGE_CARDS = 75_000
+MAX_PACKAGE_CARD_TEXT = 64 * MIB
 TAGS = set("b strong em i u s del sub sup mark div span p br hr ul ol li blockquote pre code "
            "table thead tbody tr td th ruby rt rp".split())
 BLOCKS = set("div p br hr li blockquote pre tr".split())
@@ -230,8 +234,10 @@ def members_are_bounded(upload):
             if len(record) != 56 or not record.startswith(b"PK\x06\x06"):
                 raise DeckImportError("Invalid ZIP64 directory.")
             entries, directory_size = struct.unpack_from("<QQ", record, 32)
-    if entries > 12_000 or directory_size > 2 * MIB:
-        raise DeckImportError("The package has too many files.")
+    if entries > MAX_PACKAGE_FILES:
+        raise DeckImportError(f"This package has {entries:,} files. The limit is {MAX_PACKAGE_FILES:,} per package.")
+    if directory_size > MAX_PACKAGE_DIRECTORY:
+        raise DeckImportError("This package's file index exceeds 16 MiB. Export the deck in smaller packages.")
     upload.seek(0)
 
 
@@ -261,6 +267,8 @@ def read_package(upload, folder):
     members_are_bounded(upload)
     result = Deck()
     with ZipFile(upload) as archive:
+        if len(archive.infolist()) > MAX_PACKAGE_FILES:
+            raise DeckImportError(f"This package exceeds the {MAX_PACKAGE_FILES:,}-file limit.")
         names = set(archive.namelist())
         modern = "collection.anki21b" in names
         collection = next((name for name in ("collection.anki21b", "collection.anki21", "collection.anki2")
@@ -274,7 +282,7 @@ def read_package(upload, folder):
 
         assets = {}
         if "media" in names:
-            media_map = b"".join(member(archive, "media", modern, 4 * MIB))
+            media_map = b"".join(member(archive, "media", modern, 16 * MIB))
             if modern:
                 entries = (data for key, data in proto(media_map) if key == 1)
                 assets = {dict(proto(entry))[1].decode(): str(i) for i, entry in enumerate(entries)}
@@ -330,10 +338,12 @@ def read_package(upload, folder):
             rows = db.execute("""
                 SELECT n.guid, n.mid, n.flds, n.tags, c.ord
                 FROM cards c JOIN notes n ON n.id = c.nid ORDER BY c.id LIMIT ?
-            """, (MAX_CARDS + 1,))
+            """, (MAX_PACKAGE_CARDS + 1,))
             for number, (guid, mid, fields, tags, order) in enumerate(rows, 1):
-                if number > MAX_CARDS or time.monotonic() > deadline:
-                    raise DeckImportError("Split the package into smaller decks and retry.")
+                if number > MAX_PACKAGE_CARDS:
+                    raise DeckImportError(f"Export decks with at most {MAX_PACKAGE_CARDS:,} cards per package.")
+                if time.monotonic() > deadline:
+                    raise DeckImportError("This deck took too long to process.")
                 if mid not in models or len(fields) > 48_000:
                     result.skipped += 1
                     continue
@@ -352,7 +362,7 @@ def read_package(upload, folder):
                     result.skipped += 1
                     continue
                 total_text += len(front.encode()) + len(back.encode())
-                if total_text > 12 * MIB:
+                if total_text > MAX_PACKAGE_CARD_TEXT:
                     raise DeckImportError("The deck contains too much card text. Split it into smaller decks.")
                 result.cards.append((f"{guid}:{order}", front, back))
     return result
