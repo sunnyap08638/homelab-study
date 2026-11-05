@@ -14,9 +14,23 @@
   </header>
   <main>
     <section id="review">
-      <h2>Due for review</h2>
+      <h2>Flashcards</h2>
+      <label for="deck">Deck</label>
+      <select id="deck"><option value="">All cards</option></select>
+      <label for="review-mode">Mode</label>
+      <select id="review-mode"><option value="due">Due for review</option><option value="practice">Browse all cards</option></select>
       <div id="review-card"></div>
       <button id="load-review">Refresh review</button>
+      <details>
+        <summary>Import an Anki deck</summary>
+        <form id="import-deck">
+          <label for="deck-file">Anki package or tab-separated export</label>
+          <input id="deck-file" type="file" name="file" accept=".apkg,.tsv,.txt" required>
+          <label for="deck-name">Deck name (optional)</label>
+          <input id="deck-name" name="name" maxlength="100" placeholder="Defaults to the file name">
+          <button>Upload deck</button>
+        </form>
+      </details>
     </section>
     <section>
       <h2>Notes</h2>
@@ -24,8 +38,10 @@
       <select id="notes"><option value="">Choose a note</option></select>
       <button id="open-note">Open note</button>
       <details>
-        <summary>Paste a note</summary>
+        <summary>Paste or upload a note</summary>
         <form id="import-note">
+          <label for="note-file">Load a text or Markdown file (optional)</label>
+          <input id="note-file" type="file" accept=".md,.txt,text/plain,text/markdown">
           <label for="name">Title</label>
           <input id="name" name="name" required maxlength="512">
           <label for="body">Text</label>

@@ -11,6 +11,18 @@ Home Study is a single-user flashcard app for a home Kubernetes cluster. Notes a
 
 GPU workers serve separate requests. Ordinary Kubernetes scheduling and this Ollama setup place a model on one machine. Start with the 7900 XT for 27B. [K3s requirements](https://docs.k3s.io/installation/requirements) · [Ollama GPU support](https://docs.ollama.com/gpu)
 
+## What you can do
+
+- **Import an Anki deck.** Upload a modern or legacy `.apkg`, or a tab-separated text export with front and back in the first two columns. Home Study accepts up to 5,000 cards and 64 MiB per upload. It supports common Basic, reversed, and simple cloze cards, plus embedded images and audio in supported formats. It reports skipped cards and unavailable media. Custom scripts, styling, image occlusion, and Anki review history stay outside this import. [Anki deck export](https://docs.ankiweb.net/exporting.html)
+- **Study on any authorized device.** Pick a deck and review the cards that are due, or browse every card without changing its schedule. Again schedules a ten-minute retry. Good starts at one day and doubles the interval up to a year. The server saves progress, so it follows you across devices using the same study account.
+- **Keep reviews responsive.** The browser loads up to 12 cards at a time, keeps that batch in memory, and preloads a couple of images for the next card. Reviews save to the server as you go and require a connection.
+- **Turn notes into cards.** Paste or upload text and Markdown, or use the Mac bridge for Obsidian and Goodnotes. Choose a note section, generate up to five drafts with Ollama, and edit or approve each card with its source excerpt visible.
+- **Export to Anki.** Download active cards as a two-column TSV. The TSV exports card text. Source media and scheduling history are stored separately.
+
+Reuploading an Anki package under the same deck name updates matching card content and keeps Home Study review progress. Imported cards begin with a fresh schedule. Decks, media, and progress live on the Ubuntu server, so the gaming PC can sleep during import, browsing, review, and export.
+
+The pilot uses a single study account. For a wider release, separate users and decks before opening access. The web app can move to a hosted container with managed PostgreSQL and object storage for media. Inference can remain on a private GPU worker or move to a hosted provider with its own queue and credentials.
+
 ## Run the Ubuntu server first
 
 The app can run while the GPU worker is offline. Note import, review, and Anki export only require the Ubuntu server. To install from this workspace on your Mac, open a **local** Terminal tab and run:
@@ -34,12 +46,14 @@ Open the app tunnel from a local Terminal tab on your Mac:
 ssh -N -L 8787:127.0.0.1:8787 YOUR_USER@YOUR_SERVER
 ```
 
-Visit `http://127.0.0.1:8787` and sign in as `study`. To use the app on phones and tablets, check existing [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) configuration and choose a free private HTTPS port on Ubuntu:
+Visit `http://127.0.0.1:8787` and sign in as `study`. To use the app away from home, connect the phone or iPad to Tailscale and open the same private HTTPS address in Safari. Check existing [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) configuration and choose a free private HTTPS port on Ubuntu:
 
 ```bash
 sudo tailscale serve status
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:8787
 ```
+
+For an outside user, share the server only after verifying that the share grants access to the app port. Keep SSH and Kubernetes admin access restricted to administrators. [Tailscale machine sharing and access rules](https://tailscale.com/docs/features/sharing#sharing-and-access-control-policies)
 
 The single app replica uses host networking for wake packets and listens on Ubuntu loopback. The SQLite database lives in a local-path PVC. Save periodic backups using SQLite's online backup command. [K3s persistent storage](https://docs.k3s.io/add-ons/storage)
 
@@ -133,6 +147,6 @@ Verify GPU offload again. Then update the app's `OLLAMA_URL` to `http://ollama-a
 
 ## Local development
 
-With Python 3.12 and any reachable local Ollama endpoint, set `STUDY_PASSWORD` and optionally `OLLAMA_URL` and `OLLAMA_MODEL`, then run `python3 app.py`. Open `http://127.0.0.1:8787`. The default database is `study.sqlite3` in the working directory. If inference is unavailable, note import and flashcard review remain available.
+With Python 3.14 and any reachable local Ollama endpoint, set `STUDY_PASSWORD` and optionally `OLLAMA_URL` and `OLLAMA_MODEL`, then run `python3 app.py`. Open `http://127.0.0.1:8787`. The default database is `study.sqlite3` in the working directory. If inference is unavailable, note import and flashcard review remain available.
 
-Run the offline tests with `python3 -m unittest discover -s tests -v`. They use a temporary database and a mock Ollama worker to cover stale drafts, duplicate cards, review scheduling, and wake retries.
+Run the offline tests with `python3 -m unittest discover -s tests -v`. They use temporary databases and a mock Ollama worker to cover Anki import, review scheduling, draft generation, and wake retries.

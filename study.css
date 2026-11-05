@@ -15,3 +15,8 @@ pre { max-height: 20rem; overflow: auto; }
 blockquote { margin: .5rem 0; padding-left: .75rem; border-left: 3px solid GrayText; }
 #status { position: sticky; bottom: 0; padding: .5rem; background: Canvas; }
 @media (max-width: 48rem) { main { grid-template-columns: 1fr; } }
+.card-side { margin: .5rem 0; overflow-wrap: anywhere; overflow-x: auto; white-space: pre-wrap; }
+.card-side img, .card-side audio { max-width: 100%; }
+.card-side img { height: auto; }
+.card-side table { border-collapse: collapse; }
+.card-side th, .card-side td { border: 1px solid GrayText; padding: .25rem; }

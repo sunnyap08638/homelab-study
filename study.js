@@ -2,6 +2,11 @@ const select = document.getElementById("notes");
 const panel = document.getElementById("selected-note");
 const status = document.getElementById("status");
 const reviewPanel = document.getElementById("review-card");
+const deckSelect = document.getElementById("deck");
+const reviewMode = document.getElementById("review-mode");
+let reviewQueue = [];
+let reviewPosition = 0;
+let reviewRequest = 0;
 const sourceNames = { obsidian: "Obsidian", goodnotes: "Goodnotes", manual: "Pasted" };
 let openNoteRequest = 0;
 
@@ -123,27 +128,151 @@ async function openNote(id, offset = 0) {
   if (!note.drafts.length) panel.append(node("p", "No drafts for this note."));
 }
 
-async function loadReview() {
-  const card = await api("/api/review");
+async function refreshDecks() {
+  const previous = deckSelect.value;
+  const decks = await api("/api/decks");
+  deckSelect.replaceChildren(new Option("All cards", ""), ...decks.map(deck =>
+    new Option(deck.name + " · " + deck.count + " cards", deck.id)
+  ));
+  deckSelect.value = decks.some(deck => String(deck.id) === previous) ? previous : "";
+}
+
+function cardSide(card, side) {
+  const element = node("div");
+  element.className = "card-side";
+  // Only the server's allowlisted Anki rendering is HTML. Note cards are plain text.
+  if (card.html) element.innerHTML = card[side];
+  else element.textContent = card[side];
+  return element;
+}
+
+function prefetchCard(card) {
+  if (!card?.html) return;
+  const template = node("template");
+  template.innerHTML = card.front + card.back;
+  const images = Array.from(template.content.querySelectorAll("img")).slice(0, 2);
+  for (const image of images) {
+    const preview = new Image();
+    preview.src = image.getAttribute("src");
+  }
+}
+
+async function loadReview(reset = true) {
+  const request = ++reviewRequest;
+  const practice = reviewMode.value === "practice";
+  if (reset) {
+    reviewPosition = 0;
+    reviewQueue = [];
+  }
+  if (!reviewQueue.length) {
+    reviewPanel.replaceChildren(node("p", "Loading cards…"));
+    const params = new URLSearchParams({ batch: "1", deck: deckSelect.value });
+    if (practice) {
+      params.set("practice", "1");
+      params.set("after", String(reviewPosition));
+    }
+    const cards = await api("/api/review?" + params);
+    if (request !== reviewRequest) return;
+    reviewQueue = cards;
+  }
+
+  const card = reviewQueue[0];
   if (!card) {
-    reviewPanel.replaceChildren(node("p", "You’re caught up."));
+    reviewPanel.replaceChildren(node("p", practice ? "End of this deck." : "You’re caught up."));
     return;
   }
+  const nextCard = async () => {
+    if (request !== reviewRequest) return;
+    reviewPosition = card.id;
+    reviewQueue.shift();
+    await loadReview(false);
+  };
   const answer = node("div");
   const reveal = action("Show answer", () => {
     reveal.remove();
+    answer.append(cardSide(card, "back"));
+    if (card.evidence) answer.append(node("blockquote", card.evidence));
+    if (practice) {
+      answer.append(action("Next card", nextCard));
+      return;
+    }
     const rate = rating => async () => {
-      await api("/api/cards/" + card.id + "/review", { rating, reviews: card.reviews });
-      await loadReview();
+      const buttons = answer.querySelectorAll("button");
+      for (const button of buttons) button.disabled = true;
+      try {
+        await api("/api/cards/" + card.id + "/review", { rating, reviews: card.reviews });
+        await nextCard();
+      } catch (error) {
+        if (request === reviewRequest && error.message.includes("another device")) {
+          await loadReview();
+        }
+        throw error;
+      } finally {
+        for (const button of buttons) button.disabled = false;
+      }
     };
-    answer.append(node("p", card.back), node("blockquote", card.evidence),
-      action("Again · 10 min", rate("again")), action("Good", rate("good")));
+    answer.append(action("Again · 10 min", rate("again")), action("Good", rate("good")));
   });
-  reviewPanel.replaceChildren(node("p", card.name), node("h3", card.front), reveal, answer);
+  reviewPanel.replaceChildren(node("p", card.name), cardSide(card, "front"), reveal, answer);
+  prefetchCard(reviewQueue[1]);
 }
 
-document.getElementById("load-review").addEventListener("click", () =>
-  loadReview().catch(error => { status.textContent = error.message; }));
+function refreshReview() {
+  loadReview().catch(error => { status.textContent = error.message; });
+}
+
+document.getElementById("load-review").addEventListener("click", refreshReview);
+deckSelect.addEventListener("change", refreshReview);
+reviewMode.addEventListener("change", refreshReview);
+document.getElementById("import-deck").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const fields = new FormData(form);
+  const file = fields.get("file");
+  const name = fields.get("name").trim();
+  const button = form.querySelector("button");
+  button.disabled = true;
+  status.textContent = "Uploading and importing deck…";
+  try {
+    if (!file.size || file.size > 64 * 1024 * 1024) throw new Error("Choose a deck of up to 64 MiB.");
+    const query = new URLSearchParams({ file: file.name });
+    if (name) query.set("name", name);
+    const response = await fetch("/api/decks/import?" + query, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: file
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "The import failed.");
+    form.reset();
+    status.textContent = result.imported + " new cards, " + result.existing + " already in this deck, " +
+      result.skipped + " skipped, " + result.missingMedia + " unavailable media files.";
+    await refreshDecks();
+    deckSelect.value = result.id;
+    await loadReview();
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.getElementById("note-file").addEventListener("change", async (event) => {
+  const input = event.currentTarget;
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    if (file.size > 640000) throw new Error("Choose a smaller text or Markdown file.");
+    const body = await file.text();
+    if (input.files[0] !== file) return;
+    if (Array.from(body).length > 160000) throw new Error("Split this note into smaller files.");
+    document.getElementById("name").value = file.name.slice(0, 512);
+    document.getElementById("body").value = body;
+  } catch (error) {
+    status.textContent = error.message;
+  }
+});
+
 document.getElementById("open-note").addEventListener("click", () =>
   openNote(select.value).catch(error => { status.textContent = error.message; }));
 document.getElementById("import-note").addEventListener("submit", async (event) => {
@@ -163,5 +292,5 @@ document.getElementById("import-note").addEventListener("submit", async (event) 
   }
 });
 
-Promise.all([refreshNotes(), loadReview()]).catch(error => { status.textContent = error.message; });
+Promise.all([refreshNotes(), refreshDecks(), loadReview()]).catch(error => { status.textContent = error.message; });
 setInterval(() => refreshNotes().catch(() => {}), 15000);
