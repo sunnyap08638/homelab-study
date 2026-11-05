@@ -13,5 +13,8 @@ configMapGenerator:
       - requirements.txt
       - wake.py
       - index.html
+      - review.html
+      - common.js
       - study.js
+      - review.js
       - study.css

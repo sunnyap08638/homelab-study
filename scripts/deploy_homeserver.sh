@@ -28,7 +28,8 @@ if [[ ! $dir =~ ^/tmp/home-study\.[a-zA-Z0-9]+$ ]]; then
 fi
 remote_dir=$dir
 printf 'Uploading the Home Study release.\n'
-COPYFILE_DISABLE=1 tar -cf - app.py anki_import.py uploads.py pdf_source.py requirements.txt wake.py index.html study.js study.css \
+COPYFILE_DISABLE=1 tar -cf - app.py anki_import.py uploads.py pdf_source.py requirements.txt wake.py index.html review.html \
+    common.js study.js review.js study.css \
     kustomization.yaml k8s/app.yaml scripts/bootstrap_homeserver.sh |
     ssh -S "$socket" -o BatchMode=yes -- "$target" "tar -xf - -C '$remote_dir'"
 printf 'Applying the release. Ubuntu may prompt for your sudo password.\n'

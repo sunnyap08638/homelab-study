@@ -1,32 +1,7 @@
 const select = document.getElementById("notes");
 const panel = document.getElementById("selected-note");
-const status = document.getElementById("status");
-const reviewPanel = document.getElementById("review-card");
-const deckSelect = document.getElementById("deck");
-const reviewMode = document.getElementById("review-mode");
-let reviewQueue = [];
-let reviewPosition = 0;
-let reviewRequest = 0;
 const sourceNames = { obsidian: "Obsidian", goodnotes: "Goodnotes", manual: "Pasted" };
 let openNoteRequest = 0;
-
-async function api(path, data) {
-  const options = data === undefined ? {} : {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data)
-  };
-  const response = await fetch(path, options);
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error || "The request failed.");
-  return result;
-}
-
-function node(tag, content) {
-  const element = document.createElement(tag);
-  if (content !== undefined) element.textContent = content;
-  return element;
-}
 
 function action(label, run) {
   const button = node("button", label);
@@ -73,7 +48,7 @@ function showDraft(draft) {
         action: decision, front: front.value, back: back.value
       });
       container.remove();
-      if (decision === "approve") await loadReview();
+      if (decision === "approve") status.textContent = "Card approved. It’s available in All cards.";
     } finally {
       for (const button of container.querySelectorAll("button")) button.disabled = false;
     }
@@ -129,101 +104,38 @@ async function openNote(id, offset = 0) {
 }
 
 async function refreshDecks() {
-  const previous = deckSelect.value;
-  const decks = await api("/api/decks");
-  deckSelect.replaceChildren(new Option("All cards", ""), ...decks.map(deck =>
-    new Option(deck.name + " · " + deck.count + " cards", deck.id)
-  ));
-  deckSelect.value = decks.some(deck => String(deck.id) === previous) ? previous : "";
-}
-
-function cardSide(card, side) {
-  const element = node("div");
-  element.className = "card-side";
-  // Only the server's allowlisted Anki rendering is HTML. Note cards are plain text.
-  if (card.html) element.innerHTML = card[side];
-  else element.textContent = card[side];
-  return element;
-}
-
-function prefetchCard(card) {
-  if (!card?.html) return;
-  const template = node("template");
-  template.innerHTML = card.front + card.back;
-  const images = Array.from(template.content.querySelectorAll("img")).slice(0, 2);
-  for (const image of images) {
-    const preview = new Image();
-    preview.src = image.getAttribute("src");
+  const deckStatus = document.getElementById("deck-status");
+  try {
+    const decks = await api("/api/decks");
+    const rows = decks.map(({ id, name, count, due }) => deckRow(id, name,
+      count.toLocaleString() + (count === 1 ? " card" : " cards") + " · " + due.toLocaleString() + " due"));
+    rows.push(deckRow("", "All cards", "Review across your decks and notes"));
+    document.getElementById("deck-list").replaceChildren(...rows);
+    deckStatus.textContent = decks.length ? "" : "Import a deck to add it here.";
+  } catch (error) {
+    deckStatus.textContent = "Couldn’t load decks. " + error.message;
   }
 }
 
-async function loadReview(reset = true) {
-  const request = ++reviewRequest;
-  const practice = reviewMode.value === "practice";
-  if (reset) {
-    reviewPosition = 0;
-    reviewQueue = [];
-  }
-  if (!reviewQueue.length) {
-    reviewPanel.replaceChildren(node("p", "Loading cards…"));
-    const params = new URLSearchParams({ batch: "1", deck: deckSelect.value });
-    if (practice) {
-      params.set("practice", "1");
-      params.set("after", String(reviewPosition));
-    }
-    const cards = await api("/api/review?" + params);
-    if (request !== reviewRequest) return;
-    reviewQueue = cards;
-  }
-
-  const card = reviewQueue[0];
-  if (!card) {
-    reviewPanel.replaceChildren(node("p", practice ? "End of this deck." : "You’re caught up."));
-    return;
-  }
-  const nextCard = async () => {
-    if (request !== reviewRequest) return;
-    reviewPosition = card.id;
-    reviewQueue.shift();
-    await loadReview(false);
-  };
-  const answer = node("div");
-  const reveal = action("Show answer", () => {
-    reveal.remove();
-    answer.append(cardSide(card, "back"));
-    if (card.evidence) answer.append(node("blockquote", card.evidence));
-    if (practice) {
-      answer.append(action("Next card", nextCard));
-      return;
-    }
-    const rate = rating => async () => {
-      const buttons = answer.querySelectorAll("button");
-      for (const button of buttons) button.disabled = true;
-      try {
-        await api("/api/cards/" + card.id + "/review", { rating, reviews: card.reviews });
-        await nextCard();
-      } catch (error) {
-        if (request === reviewRequest && error.message.includes("another device")) {
-          await loadReview();
-        }
-        throw error;
-      } finally {
-        for (const button of buttons) button.disabled = false;
-      }
-    };
-    answer.append(action("Again · 10 min", rate("again")), action("Good", rate("good")));
-  });
-  reviewPanel.replaceChildren(node("p", card.name), cardSide(card, "front"), reveal, answer);
-  prefetchCard(reviewQueue[1]);
+function deckRow(id, name, details) {
+  const row = node("li");
+  const study = node("a");
+  study.className = "deck-title";
+  study.href = studyLink(id);
+  study.append(node("strong", name), node("span", details));
+  const browse = node("a", "Browse");
+  browse.href = studyLink(id, true);
+  browse.setAttribute("aria-label", "Browse " + name);
+  row.append(study, browse);
+  return row;
 }
 
-function refreshReview() {
-  loadReview().catch(error => { status.textContent = error.message; });
+function showDeckResult(message, id) {
+  const link = node("a", "Open deck");
+  link.href = studyLink(id);
+  status.replaceChildren(message + " ", link);
 }
 
-document.getElementById("load-review").addEventListener("click", refreshReview);
-deckSelect.addEventListener("change", refreshReview);
-reviewMode.addEventListener("change", refreshReview);
 const uploadLimit = 10_000_000_000;
 const uploadChunkSize = 8 * 1024 * 1024;
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -323,11 +235,9 @@ document.getElementById("import-deck").addEventListener("submit", async (event) 
       await pause(delay);
     }
     form.reset();
-    status.textContent = result.imported + " new cards, " + result.existing + " already in this deck, " +
-      result.skipped + " skipped, " + result.missingMedia + " unavailable media files.";
     await refreshDecks();
-    deckSelect.value = result.id;
-    await loadReview();
+    showDeckResult(result.imported + " new cards, " + result.existing + " already in this deck, " +
+      result.skipped + " skipped, " + result.missingMedia + " unavailable media files.", result.id);
   } catch (error) {
     if (upload) await api(upload.path + "/cancel", {}).catch(() => {});
     status.textContent = error.message;
@@ -442,9 +352,7 @@ chatSave.addEventListener("submit", async event => {
     }
     chatSave.hidden = !chatDrafts.children.length;
     await refreshDecks();
-    deckSelect.value = result.id;
-    await loadReview();
-    status.textContent = selected.length + " cards saved.";
+    showDeckResult(selected.length + " cards saved.", result.id);
   } catch (error) {
     status.textContent = error.message;
   } finally {
@@ -487,5 +395,6 @@ document.getElementById("import-note").addEventListener("submit", async (event) 
   }
 });
 
-Promise.all([refreshNotes(), refreshDecks(), loadReview()]).catch(error => { status.textContent = error.message; });
+refreshDecks();
+refreshNotes().catch(error => { status.textContent = error.message; });
 setInterval(() => refreshNotes().catch(() => {}), 15000);

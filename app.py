@@ -377,8 +377,9 @@ class Handler(BaseHTTPRequestHandler):
             self.json({"error": str(error)}, 404)
 
     def get(self, path, params):
-        assets = {"/": ("index.html", "text/html"), "/study.js": ("study.js", "text/javascript"),
-                  "/study.css": ("study.css", "text/css")}
+        assets = {"/": ("index.html", "text/html"), "/study": ("review.html", "text/html"),
+                  "/common.js": ("common.js", "text/javascript"), "/study.js": ("study.js", "text/javascript"),
+                  "/review.js": ("review.js", "text/javascript"), "/study.css": ("study.css", "text/css")}
         if path in assets:
             filename, mime = assets[path]
             self.send(200, (ROOT / filename).read_bytes(), mime + "; charset=utf-8")
@@ -403,10 +404,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/decks":
             with database() as db:
                 rows = db.execute("""
-                    SELECT notes.id, name, COUNT(cards.id) AS count FROM notes
+                    SELECT notes.id, name, COUNT(cards.id) AS count, SUM(cards.due<=?) AS due FROM notes
                     JOIN cards ON cards.note=notes.id AND cards.state='active'
                     WHERE notes.source IN ('anki','chat') GROUP BY notes.id ORDER BY name COLLATE NOCASE
-                """)
+                """, (int(time.time()),))
                 self.json([dict(row) for row in rows])
         elif match := re.fullmatch(r"/api/media/([a-f0-9]{64})", path):
             with database() as db:

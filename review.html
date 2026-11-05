@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Study session · Home Study</title>
+  <link rel="stylesheet" href="/study.css">
+  <script defer src="/common.js"></script>
+  <script defer src="/review.js"></script>
+</head>
+<body class="review-page">
+  <header class="session-header">
+    <a class="deck-return" href="/#decks">← Decks</a>
+    <div class="session-title">
+      <p class="label" id="session-mode"></p>
+      <h1 id="session-title">Study session</h1>
+    </div>
+    <a id="session-switch" hidden></a>
+  </header>
+  <main class="review-stage" id="review-stage" aria-label="Flashcard" tabindex="0">
+    <div class="review-content">
+      <p class="label" id="card-face" hidden></p>
+      <div id="review-card"><p>Loading cards…</p></div>
+    </div>
+  </main>
+  <footer class="session-footer">
+    <div class="session-meta">
+      <p id="session-progress"></p>
+      <p id="status" role="status"></p>
+    </div>
+    <div class="review-actions">
+      <button id="show-answer" class="primary" type="button" hidden>Show answer</button>
+      <button id="show-question" type="button" hidden>Show question</button>
+      <button id="again" type="button" hidden>Again <small>10 min</small></button>
+      <button id="good" class="primary" type="button" hidden>Good</button>
+      <button id="next-card" class="primary" type="button" hidden>Next card</button>
+      <button id="retry-review" type="button" hidden>Try again</button>
+    </div>
+  </footer>
+</body>
+</html>

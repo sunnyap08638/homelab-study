@@ -5,34 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Home Study</title>
   <link rel="stylesheet" href="/study.css">
+  <script defer src="/common.js"></script>
   <script defer src="/study.js"></script>
 </head>
 <body>
-  <header>
-    <div><p class="label">HOME LAB</p><h1>Home Study</h1></div>
-    <a href="/anki.tsv" download>Export to Anki</a>
+  <header class="home-header">
+    <div><p class="label">Study workspace</p><h1>Home Study</h1></div>
+    <nav aria-label="Workspace">
+      <a href="#decks">Decks</a>
+      <a href="#import">Import</a>
+    </nav>
   </header>
-  <main>
-    <section id="review">
-      <h2>Flashcards</h2>
-      <label for="deck">Deck</label>
-      <select id="deck"><option value="">All cards</option></select>
-      <label for="review-mode">Mode</label>
-      <select id="review-mode"><option value="due">Due for review</option><option value="practice">Browse all cards</option></select>
-      <div id="review-card"></div>
-      <button id="load-review">Refresh review</button>
-      <details>
-        <summary>Import an Anki deck</summary>
-        <form id="import-deck">
-          <label for="deck-file">Anki package or tab-separated export</label>
-          <input id="deck-file" type="file" name="file" accept=".apkg,.tsv,.txt" required>
-          <p>Anki packages can be up to 10 GB.</p>
-          <label for="deck-name">Deck name (optional)</label>
-          <input id="deck-name" name="name" maxlength="100" placeholder="Defaults to the file name">
-          <button>Upload deck</button>
-          <button type="button" class="cancel-upload" hidden>Cancel upload</button>
-        </form>
-      </details>
+  <main class="workspace">
+    <section id="decks" class="deck-library" aria-labelledby="decks-heading">
+      <div class="section-heading">
+        <div><h2 id="decks-heading">Your decks</h2><p>Choose a deck to start a study session.</p></div>
+        <a href="/anki.tsv" download>Export to Anki</a>
+      </div>
+      <p id="deck-status" role="status">Loading decks…</p>
+      <ul id="deck-list" class="deck-list"></ul>
+    </section>
+    <section id="import">
+      <h2>Import an Anki deck</h2>
+      <form id="import-deck">
+        <label for="deck-file">Anki package or tab-separated export</label>
+        <input id="deck-file" type="file" name="file" accept=".apkg,.tsv,.txt" required>
+        <p>Anki packages can be up to 10 GB.</p>
+        <label for="deck-name">Deck name (optional)</label>
+        <input id="deck-name" name="name" maxlength="100" placeholder="Defaults to the file name">
+        <button>Upload deck</button>
+        <button type="button" class="cancel-upload" hidden>Cancel upload</button>
+      </form>
     </section>
     <section>
       <h2>Notes</h2>
