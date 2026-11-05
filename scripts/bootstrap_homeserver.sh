@@ -24,7 +24,6 @@ kube() {
 
 if command -v k3s >/dev/null; then
     systemctl is-active --quiet k3s || die "K3s exists but its server service is not running."
-    kube get node "$node" >/dev/null || die "The existing cluster has no node named $node."
     if [[ -n $(ss -H -ltn 'sport = :8787') ]] &&
         [[ -z $(kube -n "$namespace" get deployment home-study --ignore-not-found -o name) ]]; then
         die "TCP 8787 is already in use on this server."
@@ -72,7 +71,9 @@ PY
         --disable=traefik --disable=servicelb
 fi
 
+kube wait --for=create "node/$node" --timeout=180s
 kube wait --for=condition=Ready "node/$node" --timeout=180s
+kube wait --for=create deployment/local-path-provisioner -n kube-system --timeout=180s
 kube rollout status deployment/local-path-provisioner -n kube-system --timeout=180s
 kube label "node/$node" homelab-role=always-on
 kube create namespace "$namespace" --dry-run=client -o yaml | kube apply -f -
