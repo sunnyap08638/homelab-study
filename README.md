@@ -63,28 +63,60 @@ The homelab deployment temporarily sets `STUDY_UPLOAD_MAX_BYTES` to 100 GB (100,
 
 ## 1. Benchmark Qwen on the gaming PC
 
-Install or update [Ollama for Windows](https://docs.ollama.com/windows) and use a [compatible AMD driver](https://docs.ollama.com/gpu). In PowerShell:
+Install or update [Ollama for Windows](https://docs.ollama.com/windows) and use a [compatible AMD driver](https://docs.ollama.com/gpu). Start Ollama, then open PowerShell:
 
 ```powershell
 ollama pull qwen3.8:27b
 $body = @{
     model = 'qwen3.8:27b'
-    messages = @(@{role = 'user'; content = 'Explain what a Kubernetes Service does in three sentences.'})
-    options = @{num_ctx = 4096}
+    messages = @(@{role = 'user'; content = 'Return one flashcard as JSON with front and back fields about the boiling point of pure water at standard atmospheric pressure.'})
+    format = 'json'
+    options = @{num_ctx = 4096; num_predict = 128; temperature = 0}
     stream = $false
     think = $false
     keep_alive = '5m'
 } | ConvertTo-Json -Depth 4
-Invoke-RestMethod http://127.0.0.1:11434/api/chat -Method Post -ContentType application/json -Body $body
+(Invoke-RestMethod http://127.0.0.1:11434/api/chat -Method Post -ContentType application/json -Body $body).message.content
 ollama ps
 ollama stop qwen3.8:27b
 ```
 
 The Q4_K_M download is about 18 GB. The RX 7900 XT has 20 GB of VRAM. Runtime buffers, context, and other applications also consume VRAM. Test with the game closed and check for `100% GPU` in `ollama ps`. If some layers offload to CPU or the model fails to load, try Qwen3.6-27B and measure it the same way. The current 3.6 GGUF is also listed around 18 GB, so a smaller quantization or model may be necessary if both have trouble. [Qwen3.8](https://ollama.com/library/qwen3.8:27b) · [Qwen3.6](https://ollama.com/library/qwen3.6:27b) · [AMD GPU specifications](https://rocmdocs.amd.com/en/docs-7.2.4/reference/gpu-arch-specs.html) · [Checking GPU offload](https://docs.ollama.com/context-length)
 
-## 2. Test Wake-on-LAN on the wired network
+## 2. Connect Ollama on the wired network
 
-Give the gaming PC a stable LAN IP, ideally a DHCP reservation. In its firmware and Windows Ethernet adapter settings, enable wake by magic packet. Start with Windows Sleep. Use `powercfg /a` to see which sleep states are available and `Get-NetAdapter` to find the wired adapter MAC. Obtain the wired subnet's broadcast address from `ip -4 addr` on Ubuntu. Use the LAN broadcast address, since the Tailscale SSH address is for administration. [Microsoft wake behavior](https://learn.microsoft.com/en-us/troubleshoot/windows-client/deployment/wake-on-lan-feature)
+Give the gaming PC a stable LAN IP, ideally a DHCP reservation. Use `Get-NetIPConfiguration` to find its wired IPv4 address. On Ubuntu, use `ip -4 route get PC_LAN_IP` to check which source address Ubuntu uses to reach the PC.
+
+In an administrator PowerShell on Windows, substitute the two LAN addresses and the wired adapter name. These settings are for the account that runs Ollama.
+
+```powershell
+$pcIp = 'PC_LAN_IP'
+$ubuntuIp = 'UBUNTU_LAN_IP'
+$ethernet = 'Ethernet'
+Get-NetConnectionProfile -InterfaceAlias $ethernet
+New-NetFirewallRule -Name MnemeOllama -DisplayName 'Mneme from Ubuntu' -Direction Inbound `
+    -Action Allow -Protocol TCP -LocalPort 11434 -LocalAddress $pcIp -RemoteAddress $ubuntuIp `
+    -InterfaceAlias $ethernet -Profile Private
+[Environment]::SetEnvironmentVariable('OLLAMA_HOST', "${pcIp}:11434", 'User')
+[Environment]::SetEnvironmentVariable('OLLAMA_NO_CLOUD', '1', 'User')
+[Environment]::SetEnvironmentVariable('OLLAMA_NUM_PARALLEL', '1', 'User')
+[Environment]::SetEnvironmentVariable('OLLAMA_CONTEXT_LENGTH', '4096', 'User')
+```
+
+Use this rule with your trusted home Ethernet profile set to Private. Review any broader Ollama inbound allow rules in Windows Firewall. Quit Ollama from the tray, relaunch it, then verify the listener from Ubuntu with `curl --noproxy '*' http://PC_LAN_IP:11434/api/tags`. Ollama’s local API is unauthenticated. [Ollama Windows configuration](https://docs.ollama.com/windows) · [Ollama local-only mode](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features)
+
+From the Mac, copy and run the connection script while Windows is awake. Wait for any active deck import to finish before restarting Mneme.
+
+```bash
+scp scripts/connect_ollama_worker.sh YOUR_USER@YOUR_SERVER:mneme-connect-ollama.sh
+ssh -t YOUR_USER@YOUR_SERVER 'sudo bash ~/mneme-connect-ollama.sh PC_LAN_IP'
+```
+
+The script checks for `qwen3.8:27b` at the worker, applies the K3s configuration, and checks generation using a synthetic prompt. Pass a different installed local model as the second argument if it benchmarked better.
+
+## 3. Test Wake-on-LAN on the wired network
+
+In the gaming PC’s firmware and Windows Ethernet adapter settings, enable wake by magic packet. Start with Windows Sleep. Use `powercfg /a` to see which sleep states are available and `Get-NetAdapter` to find the wired adapter MAC. Obtain the wired subnet's broadcast address from `ip -4 addr` on Ubuntu. Use the LAN broadcast address, since the Tailscale SSH address is for administration. [Microsoft wake behavior](https://learn.microsoft.com/en-us/troubleshoot/windows-client/deployment/wake-on-lan-feature)
 
 Copy the workspace to Ubuntu. Put the PC to sleep manually, then from Ubuntu run this with the actual wired MAC and LAN broadcast address:
 
@@ -94,26 +126,15 @@ python3 wake.py 'PC_ETHERNET_MAC' 'LAN_BROADCAST'
 
 Test physical wake before connecting it to the app. Repeat from the intended sleep state. A dual-boot machine wakes or boots according to its firmware and boot configuration, so a cold boot should select Linux automatically if Linux is meant to be the worker.
 
-For Windows service connectivity, set `OLLAMA_HOST` to the PC's LAN IP and port 11434, set `OLLAMA_NO_CLOUD=1`, then restart Ollama so it reads those settings. Allow TCP 11434 in Windows Firewall **only** from the Ubuntu LAN IP. Ollama's local API trusts callers on that port. Confirm `curl http://PC_LAN_IP:11434/api/tags` from Ubuntu with the PC awake. Check after a resume, and after a reboot if the pilot needs to wake from a full shutdown. [Ollama Windows configuration](https://docs.ollama.com/windows) · [Ollama local-only mode](https://docs.ollama.com/faq#how-do-i-disable-ollamas-cloud-features)
+After physical wake works, configure Mneme to wake the PC for generation:
+
+```bash
+sudo bash connect_ollama_worker.sh PC_LAN_IP qwen3.8:27b PC_ETHERNET_MAC LAN_BROADCAST
+```
 
 Use the PC's own idle-sleep settings for the Windows pilot. Test that the machine stays awake through generation, then goes back to sleep while idle. Use at least 15 minutes for the first test and check actual behavior with `powercfg /requests`. The app controls wake and releases the model. Automatic OS shutdown and inference-aware sleep inhibition are separate follow-up work for the Linux worker.
 
-## 3. Connect the verified worker
-
-Configure the verified worker and restart the app. Replace the placeholders using the values from step 2:
-
-```bash
-sudo k3s kubectl -n home-study create configmap home-study-worker \
-  --from-literal=OLLAMA_URL='http://PC_LAN_IP:11434' \
-  --from-literal=OLLAMA_MODEL='qwen3.8:27b' \
-  --from-literal=WOL_MAC='PC_ETHERNET_MAC' \
-  --from-literal=WOL_BROADCAST='LAN_BROADCAST' \
-  --dry-run=client -o yaml | sudo k3s kubectl apply -f -
-sudo k3s kubectl -n home-study rollout restart deploy/home-study
-sudo k3s kubectl -n home-study rollout status deploy/home-study
-```
-
-Use `qwen3.6:27b` in the ConfigMap if that model performs better. Leave both WOL values out to test inference while the worker is already awake. After enabling wake, verify that importing and reviewing leave the PC asleep, a generation wakes it, and the PC returns to sleep after the OS idle period. Save periodic SQLite backups from the Ubuntu volume using SQLite's online backup command.
+Verify that importing and reviewing leave the PC asleep, generation wakes it, and the PC returns to sleep after the OS idle period.
 
 ## 4. Sync notes from the Mac
 
@@ -134,7 +155,7 @@ python3 scripts/sync_notes.py \
 
 Either source flag can be used on its own. Use the private HTTPS URL in place of the SSH tunnel when available. Add `--once` for a one-time import. The bridge polls every 15 seconds and waits for a stable file before sending its text. PDF conversion uses macOS Vision and PDFKit. Inspect OCR before approving cards. Updates replace the mirrored note and invalidate pending drafts while preserving approved cards and review progress. Renamed and deleted files leave their last imported copy in the app.
 
-Approve or edit each generated draft, then use **Due for review**. Again schedules a ten-minute retry. Good doubles the interval after the first one-day review. **Export to Anki** downloads approved Front and Back fields as TSV for Anki's Basic note type. [Anki TSV import](https://docs.ankiweb.net/manual/importing/text-files)
+Approve or edit each generated draft, then use **All cards** to review it. **Export to Anki** downloads approved Front and Back fields as TSV for Anki's Basic note type. [Anki TSV import](https://docs.ankiweb.net/manual/importing/text-files)
 
 ## 5. Join the gaming PC as a Linux GPU worker
 
