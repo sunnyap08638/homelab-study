@@ -1,0 +1,14 @@
+{
+  "id": "/",
+  "name": "Mount Olympus",
+  "short_name": "Mount Olympus",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#141618",
+  "theme_color": "#141618",
+  "icons": [
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"},
+    {"src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png"}
+  ]
+}
