@@ -319,6 +319,7 @@ function showClioResult(status) {
     const card = document.createElement("fieldset");
     const legend = document.createElement("legend");
     legend.textContent = "Clip " + moment.rank + " · " + clipTime(moment.start_ms) + "–" + clipTime(moment.end_ms);
+    if (moment.automatic_preview) legend.textContent += " · Auto-selected preview";
     card.append(legend);
     if (playable && /^clip-0[1-3]\.mp4$/.test(moment.file || "")) {
       const video = document.createElement("video");
