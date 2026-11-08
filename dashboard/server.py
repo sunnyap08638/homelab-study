@@ -302,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ASSETS:
             filename, mime = ASSETS[self.path]
             self.send(200, (ROOT / filename).read_bytes(), mime)
+        elif self.path == "/api/clio/weekly":
+            self.clio_request("/api/weekly")
         elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clip-0[1-3]\.mp4)", self.path):
             self.clio_clip(*match.groups())
         elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/youtube-drafts", self.path):
@@ -330,6 +332,9 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Send a JSON object.")
             if self.path == "/api/clio":
                 self.clio_request("/api/jobs", {"topic": body.get("topic"), "mode": body.get("mode", "review")})
+                return
+            if self.path == "/api/clio/weekly":
+                self.clio_request("/api/weekly", {})
                 return
             if match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clips|generate|review)", self.path):
                 job_id, action = match.groups()

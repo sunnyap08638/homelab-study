@@ -258,6 +258,8 @@ let clioTimer;
 let clioPending = false;
 let clioResult;
 let clioView;
+let clioTrim;
+let trimDrag;
 $("clio-mode").value = sessionStorage.getItem("clio-mode") || "review";
 $("clio-mode").addEventListener("change", () => sessionStorage.setItem("clio-mode", $("clio-mode").value));
 
@@ -267,7 +269,8 @@ function setClioJob(id) {
   $("clio-preview").hidden = true;
   $("clio-player").removeAttribute("src");
   $("clio-player").removeAttribute("data-video-id");
-  $("clio-start").value = "";
+  clioTrim = null;
+  trimDrag = null;
   clioView = null;
   clioResult = null;
 }
@@ -297,8 +300,9 @@ function showClioResult(status) {
   const moments = result.moments || [];
   const previewing = status.state === "source_review";
   const reviewing = status.state === "review";
-  const playable = reviewing || status.state === "ready";
-  $("clio-manual").hidden = !reviewing;
+  const editable = reviewing || previewing;
+  const playable = reviewing || ["ready", "publishing", "publish_failed"].includes(status.state);
+  $("clio-manual").hidden = !editable;
   $("clio-review-actions").hidden = !reviewing && !previewing;
   $("clio-generate").hidden = !previewing;
   $("clio-save").hidden = !reviewing || !moments.length;
@@ -348,7 +352,12 @@ function showClioResult(status) {
     }
     $("clio-clips").append(card);
   }
-  if (reviewing) {
+  if (editable) {
+    if (!clioTrim) {
+      const duration = Math.floor(result.duration_seconds);
+      clioTrim = { duration, start: 0, end: Math.min(30, duration) };
+    }
+    drawClioTrim();
     const slots = [1, 2, 3];
     const occupied = new Set(moments.map((moment) => moment.rank));
     $("clio-slot").replaceChildren(...slots.map((rank) => new Option(
@@ -377,13 +386,16 @@ async function updateClio() {
       review: count ? "Preview the clips and choose which to send to your MacBook." : "Choose a start time to cut a clip from this source.",
       ready: `${count} clips ready. Waiting for your MacBook to collect them.`,
       delivered: `${count} clips saved to Desktop → Clio.`,
+      publishing: "Approved clips are queued for YouTube.",
+      published: "Approved clips uploaded to YouTube.",
+      publish_failed: "Some uploads need attention. Check the YouTube upload status.",
       rejected: "Video rejected.",
       expired: "Delivery expired after 24 hours. Submit the topic again to regenerate the clips.",
     };
     $("clio-status").textContent = status.message || messages[status.state] || "";
     $("clio-submit").disabled = status.state === "running";
     showClioResult(status);
-    if (["running", "ready"].includes(status.state)) clioTimer = setTimeout(updateClio, 4000);
+    if (["running", "ready", "publishing"].includes(status.state)) clioTimer = setTimeout(updateClio, 4000);
   } catch (error) {
     if (job !== clioJob || clioPending) return;
     $("clio-status").textContent = error.message;
@@ -407,6 +419,7 @@ async function clioAction(action) {
     buttons.forEach((button) => { button.disabled = false; });
     clioPending = false;
     updateClio();
+    updateWeeklyQueue();
   }
 }
 
@@ -421,35 +434,87 @@ $("clio-form").addEventListener("submit", async (event) => {
   });
 });
 
-function clioRange() {
-  const parts = $("clio-start").value.trim().split(":");
-  if (parts.length > 3 || parts.some((part, index) => !/^\d+$/.test(part) || (index > 0 && Number(part) >= 60))) {
-    throw new Error("Enter a start time in seconds, minutes:seconds, or hours:minutes:seconds.");
+function drawClioTrim() {
+  const { start, end, duration } = clioTrim;
+  const span = trimDrag?.span || Math.min(duration, Math.max(120, end - start + 60));
+  const left = trimDrag?.left ?? Math.max(0, Math.min(start - 30, duration - span));
+  clioTrim.span = span;
+  clioTrim.left = left;
+  const percent = (value) => Math.max(0, Math.min(100, 100 * (value - left) / span));
+  const selection = $("clio-trim-selection");
+  selection.style.left = percent(start) + "%";
+  selection.style.width = (percent(end) - percent(start)) + "%";
+  for (const [id, value, min, max] of [
+    ["clio-trim-in", start, Math.max(0, end - 180), end - 1],
+    ["clio-trim-out", end, start + 1, Math.min(duration, start + 180)],
+  ]) {
+    const handle = $(id);
+    handle.style.left = percent(value) + "%";
+    handle.setAttribute("aria-valuemin", min);
+    handle.setAttribute("aria-valuemax", max);
+    handle.setAttribute("aria-valuenow", value);
+    handle.setAttribute("aria-valuetext", clipTime(value * 1000));
   }
-  const start = parts.reduce((seconds, part) => seconds * 60 + Number(part), 0);
-  const duration = clioResult.duration_seconds;
-  const end = start + Math.min(30, duration);
-  if (end > duration) throw new Error("Choose a start time with enough video left to cut the clip.");
-  return { start, end };
+  $("clio-trim-window-start").textContent = clipTime(left * 1000);
+  $("clio-trim-window-end").textContent = clipTime((left + span) * 1000);
+  $("clio-trim-summary").textContent = clipTime(start * 1000) + "–" + clipTime(end * 1000) + " · " + (end - start) + " seconds";
+  $("clio-trim-position").max = duration - (end - start);
+  $("clio-trim-position").value = start;
 }
 
-$("clio-preview-range").addEventListener("click", () => {
-  try {
-    const { start, end } = clioRange();
-    $("clio-notice").textContent = "";
-    sourcePlayer(clioResult.video_id, "&start=" + start + "&end=" + Math.ceil(end));
-  } catch (error) {
-    $("clio-notice").textContent = error.message;
+function changeClioTrim(part, start, end, delta) {
+  const { duration } = clioTrim;
+  const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  if (part === "in") clioTrim.start = clamp(start + delta, Math.max(0, end - 180), end - 1);
+  else if (part === "out") clioTrim.end = clamp(end + delta, start + 1, Math.min(duration, start + 180));
+  else {
+    clioTrim.start = clamp(start + delta, 0, duration - (end - start));
+    clioTrim.end = clioTrim.start + end - start;
   }
+  drawClioTrim();
+}
+
+for (const part of ["in", "out", "selection"]) {
+  const handle = $("clio-trim-" + part);
+  handle.addEventListener("pointerdown", (event) => {
+    if (!clioTrim || event.button !== 0) return;
+    trimDrag = { ...clioTrim, x: event.clientX, id: event.pointerId };
+    handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", (event) => {
+    if (!trimDrag || trimDrag.id !== event.pointerId) return;
+    const track = $("clio-trim-track").getBoundingClientRect();
+    const delta = Math.round((event.clientX - trimDrag.x) * trimDrag.span / track.width);
+    changeClioTrim(part, trimDrag.start, trimDrag.end, delta);
+  });
+  handle.addEventListener("lostpointercapture", () => {
+    trimDrag = null;
+    if (clioTrim) drawClioTrim();
+  });
+  handle.addEventListener("keydown", (event) => {
+    if (!clioTrim || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    event.preventDefault();
+    const delta = (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 5 : 1);
+    changeClioTrim(part, clioTrim.start, clioTrim.end, delta);
+  });
+}
+$("clio-trim-position").addEventListener("input", (event) => {
+  const { start, end } = clioTrim;
+  changeClioTrim("selection", start, end, Number(event.target.value) - start);
+});
+
+$("clio-preview-range").addEventListener("click", () => {
+  const { start, end } = clioTrim;
+  sourcePlayer(clioResult.video_id, "&start=" + start + "&end=" + end);
 });
 $("clio-full-video").addEventListener("click", () => sourcePlayer(clioResult.video_id));
 
 $("clio-manual").addEventListener("submit", (event) => {
   event.preventDefault();
   clioAction(async () => {
-    const { start } = clioRange();
+    const { start, end } = clioTrim;
     await post("/api/clio/" + encodeURIComponent(clioJob) + "/clips", {
-      start_ms: start * 1000, rank: Number($("clio-slot").value),
+      start_ms: start * 1000, end_ms: end * 1000, rank: Number($("clio-slot").value),
     });
     clioView = null;
   });
@@ -473,7 +538,7 @@ function submitClioReview(approved, youtube) {
       updateClioUploads();
     }
     if (data.next_job_id) setClioJob(data.next_job_id);
-    $("clio-notice").textContent = approved.length
+    $("clio-notice").textContent = youtube ? "Approved clips queued for YouTube." : approved.length
       ? approved.length + (approved.length === 1 ? " clip queued" : " clips queued") + " for Desktop → Clio."
       : "Video rejected.";
   });
@@ -535,6 +600,7 @@ $("clio-youtube").addEventListener("click", async () => {
       audience.required = true;
       audience.append(new Option("Choose an audience", ""), new Option("Made for kids", "yes"),
         new Option("Not made for kids", "no"));
+      audience.value = clip.made_for_kids ? "yes" : "no";
       for (const [name, label, input] of [["title", "Title", title], ["description", "Description and hashtags", description],
         ["privacy", "Visibility", privacy], ["kids", "Audience", audience]]) {
         input.name = name + "-" + clip.rank;
@@ -601,8 +667,79 @@ async function updateClioUploads() {
     clioUploadTimer = setTimeout(updateClioUploads, 8000);
   }
 }
+
+let weeklyTimer;
+async function updateWeeklyQueue() {
+  clearTimeout(weeklyTimer);
+  const button = $("clio-weekly-scan");
+  const status = $("clio-weekly-status");
+  try {
+    const response = await fetch("/api/clio/weekly", { signal: AbortSignal.timeout(7000) });
+    const { batch, error } = await response.json();
+    if (!response.ok) throw new Error(error || "Could not load the weekly queue.");
+    button.disabled = batch?.state === "running";
+    const queue = batch?.queue || [];
+    const summary = batch?.summary;
+    status.textContent = summary
+      ? queue.length + " queued from " + summary.recent + " recent videos across " +
+        summary.charts.length + " charts and " + summary.topics.length + " trending searches."
+      : batch?.message || "Scan to build a queue for source review.";
+    const list = $("clio-weekly-items");
+    const signature = JSON.stringify(queue);
+    if (list.dataset.snapshot !== signature) {
+      list.dataset.snapshot = signature;
+      const number = new Intl.NumberFormat();
+      const labels = { source_review: "Awaiting source review", running: "Preparing clips", review: "Clips ready",
+        publishing: "Uploading", published: "Uploaded", publish_failed: "Upload needs attention",
+        ready: "Queued for Desktop", delivered: "Saved to Desktop", rejected: "Skipped",
+        failed: "Could not prepare clips", expired: "Expired" };
+      list.replaceChildren(...queue.map((item) => {
+        const row = document.createElement("li");
+        const title = document.createElement("strong");
+        const stats = document.createElement("span");
+        title.textContent = item.title;
+        stats.textContent = item.channel_title + " · " + number.format(item.view_count) + " views · " +
+          number.format(item.like_count) + " likes · " + (labels[item.state] || item.state);
+        row.append(title, stats);
+        if (["source_review", "running", "review"].includes(item.state)) {
+          const open = document.createElement("button");
+          open.type = "button";
+          open.textContent = item.state === "review" ? "Review clips" : "Open source";
+          open.addEventListener("click", async () => {
+            if (clioPending) return;
+            setClioJob(item.job_id);
+            $("clio-notice").textContent = "";
+            await updateClio();
+            $("clio-preview").scrollIntoView({ block: "start" });
+          });
+          row.append(open);
+        }
+        return row;
+      }));
+    }
+    if (button.disabled || queue.some((item) => ["running", "publishing", "ready"].includes(item.state))) {
+      weeklyTimer = setTimeout(updateWeeklyQueue, 5000);
+    }
+  } catch (error) {
+    status.textContent = error.message;
+    button.disabled = false;
+  }
+}
+
+$("clio-weekly-scan").addEventListener("click", async () => {
+  $("clio-weekly-scan").disabled = true;
+  try {
+    await post("/api/clio/weekly", {});
+    updateWeeklyQueue();
+  } catch (error) {
+    $("clio-weekly-status").textContent = error.message;
+    $("clio-weekly-scan").disabled = false;
+  }
+});
+
 if (clioJob) updateClio();
 updateClioUploads();
+updateWeeklyQueue();
 
 $("refresh").addEventListener("click", refresh);
 document.addEventListener("click", (event) => {
