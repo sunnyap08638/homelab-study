@@ -675,17 +675,20 @@ async function updateWeeklyQueue() {
   const status = $("clio-weekly-status");
   try {
     const response = await fetch("/api/clio/weekly", { signal: AbortSignal.timeout(7000) });
-    const { batch, error } = await response.json();
+    const { batch, scheduled, error } = await response.json();
     if (!response.ok) throw new Error(error || "Could not load the weekly queue.");
     button.disabled = batch?.state === "running";
+    $("clio-weekly-schedule").hidden = !scheduled;
     const queue = batch?.queue || [];
     const summary = batch?.summary;
-    status.textContent = summary
-      ? queue.length + " queued from " + summary.recent + " recent videos across " +
-        summary.charts.length + " charts and " + summary.topics.length + " trending searches."
-      : batch?.message || "Scan to build a queue for source review.";
+    const ready = queue.filter((item) => item.state === "review" && item.clip_count > 0).length;
+    const preparing = batch?.state === "running" && Boolean(batch.schedule_slot);
+    status.textContent = batch?.message || (summary
+      ? queue.length + " sources from " + summary.charts.length + " charts and " +
+        summary.topics.length + " trending searches. " + ready + " ready for clip review."
+      : "Scan to build a queue for source review.");
     const list = $("clio-weekly-items");
-    const signature = JSON.stringify(queue);
+    const signature = JSON.stringify([preparing, queue]);
     if (list.dataset.snapshot !== signature) {
       list.dataset.snapshot = signature;
       const number = new Intl.NumberFormat();
@@ -698,8 +701,12 @@ async function updateWeeklyQueue() {
         const title = document.createElement("strong");
         const stats = document.createElement("span");
         title.textContent = item.title;
+        const state = item.state === "review" && !item.clip_count ? "Needs a manual trim" :
+          item.state === "source_review" && preparing && !item.message ? "Waiting to prepare" :
+          labels[item.state] || item.state;
         stats.textContent = item.channel_title + " · " + number.format(item.view_count) + " views · " +
-          number.format(item.like_count) + " likes · " + (labels[item.state] || item.state);
+          number.format(item.like_count) + " likes · " + state;
+        if (item.duration_seconds) stats.textContent += " · " + clipTime(item.duration_seconds * 1000);
         row.append(title, stats);
         if (["source_review", "running", "review"].includes(item.state)) {
           const open = document.createElement("button");
