@@ -10,6 +10,8 @@ from pathlib import Path
 import re
 import threading
 import time
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from collect import (COMMAND_ERRORS, PROJECTS, Collector, admin, compose_action,
                      docker_rows, docker_stats, processes, project_service, scan_storage)
@@ -233,6 +235,26 @@ class Handler(BaseHTTPRequestHandler):
         self.json(401, {"error": "Sign in to Mount Olympus."}, WWW_Authenticate='Basic realm="HomeLab"')
         return False
 
+    def clio_request(self, path, body=None):
+        if isinstance(self.server.dashboard, Demo):
+            self.json(503, {"error": "Clio is available on the live dashboard."})
+            return
+        request = Request("http://127.0.0.1:8765" + path,
+                          data=json.dumps(body).encode() if body is not None else None,
+                          headers={"Content-Type": "application/json"})
+        try:
+            with urlopen(request, timeout=5) as response:
+                self.json(response.status, json.load(response))
+        except HTTPError as error:
+            with error:
+                try:
+                    result = json.load(error)
+                except ValueError:
+                    result = {"error": "Clio could not complete the request."}
+            self.json(error.code, result)
+        except (OSError, URLError, ValueError):
+            self.json(503, {"error": "Clio is unavailable on the homeserver."})
+
     def do_GET(self):
         # Safari can fetch app artwork without forwarding the dashboard login.
         if self.path in APP_METADATA and self.expected_origin() is not None:
@@ -244,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ASSETS:
             filename, mime = ASSETS[self.path]
             self.send(200, (ROOT / filename).read_bytes(), mime)
+        elif re.fullmatch(r"/api/clio/[0-9a-f]{32}", self.path):
+            self.clio_request("/api/jobs/" + self.path.rsplit("/", 1)[1])
         elif self.path == "/api/snapshot":
             data = self.server.dashboard.snapshot()
             self.json(200, data) if data else self.json(503, {"error": "Collecting the first host sample."})
@@ -264,6 +288,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(int(length)))
             if not isinstance(body, dict):
                 raise ValueError("Send a JSON object.")
+            if self.path == "/api/clio":
+                self.clio_request("/api/jobs", {"topic": body.get("topic")})
+                return
             if self.path == "/api/chat":
                 result = self.server.dashboard.chat(checked_messages(body))
             elif self.path == "/api/action":

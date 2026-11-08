@@ -22,6 +22,7 @@
       <a href="#workloads" data-view="workloads"><span data-icon="layers"></span>Workloads</a>
       <a href="#storage" data-view="storage"><span data-icon="disk"></span>Storage</a>
       <a href="#worker" data-view="worker"><span data-icon="bolt"></span>GPU Worker</a>
+      <a href="#clio" data-view="clio"><span data-icon="video"></span>Clio</a>
     </nav>
     <div class="nav-label learn-label">RESOURCES</div>
     <nav aria-label="Resources">
@@ -84,6 +85,19 @@
               <p>Sunshine on Windows and Moonlight on your client can stream the full desktop and games. Pair them on your LAN first, then use a private Tailscale connection for off-site access.</p><a class="text-link" href="#learn">See the connection plan ↗</a></div></section>
           </div>
         </div>
+      </section>
+      <section class="view" id="clio" hidden>
+        <div class="page-heading"><div><div class="eyebrow"><i></i> MEDIA</div><h1>Project Clio</h1>
+          <p>Find recent YouTube videos and send captioned clips to your MacBook.</p></div></div>
+        <section class="panel"><div class="panel-head"><div><h2>Find clips</h2><p>Enter a topic, creator, or game.</p></div></div>
+          <div class="panel-body prose">
+            <form id="clio-form"><label class="sr-only" for="clio-topic">Topic</label>
+              <textarea id="clio-topic" placeholder="GTA 5" rows="2" maxlength="160" required></textarea>
+              <div class="chat-actions"><small>Results arrive in Desktop → Clio.</small><button id="clio-submit" class="primary" type="submit">Find clips</button></div>
+            </form>
+            <p id="clio-status" role="status"></p><p><a id="clio-source" hidden>Original video</a></p>
+          </div>
+        </section>
       </section>
       <section class="view" id="learn" hidden>
         <div class="page-heading"><div><div class="eyebrow"><i></i> FIELD GUIDE</div><h1>How it works</h1><p>Follow a reading or an action from the page to the hardware.</p></div></div>

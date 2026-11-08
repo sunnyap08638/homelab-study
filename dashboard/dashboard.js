@@ -13,6 +13,7 @@ const paths = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5M5 9a7.5 7.5 0 0 1 13-3l2 3M4 15l2 3a7.5 7.5 0 0 0 13-3"/>',
   immich: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1"/><path d="m4 17 5-4 3 2 4-5 5 5"/>',
+  video: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',
   jellyfin: '<path d="M4 6a2 2 0 0 1 3-2l12 7a1 1 0 0 1 0 2L7 20a2 2 0 0 1-3-2z"/>',
   navidrome: '<path d="M9 17V5l11-2v12M9 8l11-2"/><ellipse cx="6" cy="18" rx="3" ry="2"/><ellipse cx="17" cy="16" rx="3" ry="2"/>',
   mneme: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h10m-10 4h6"/>',
@@ -22,7 +23,7 @@ const paths = {
 const icon = (key) => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (paths[key] || paths.layers) + '</svg>';
 document.querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
 
-const views = { overview: "Overview", workloads: "Workloads", storage: "Storage", worker: "GPU Worker", learn: "How it works" };
+const views = { overview: "Overview", workloads: "Workloads", storage: "Storage", worker: "GPU Worker", clio: "Clio", learn: "How it works" };
 let snapshot;
 let loading = false;
 let stale = true;
@@ -251,6 +252,58 @@ async function post(url, body) {
   if (!response.ok) throw new Error(data.error || "The request failed.");
   return data;
 }
+let clioJob = sessionStorage.getItem("clio-job");
+let clioTimer;
+
+async function updateClio() {
+  clearTimeout(clioTimer);
+  if (!clioJob) return;
+  try {
+    const response = await fetch("/api/clio/" + encodeURIComponent(clioJob), { signal: AbortSignal.timeout(7000) });
+    const status = await response.json();
+    if (!response.ok) throw new Error(status.error || "Clio is unavailable.");
+    const count = status.result?.moments?.length || 0;
+    const messages = {
+      ready: `${count} clips ready. Waiting for your MacBook to collect them.`,
+      delivered: `${count} clips saved to Desktop → Clio.`,
+      expired: "Delivery expired after 24 hours. Submit the topic again to regenerate the clips.",
+    };
+    $("clio-status").textContent = messages[status.state] || status.message || "";
+    $("clio-submit").disabled = status.state === "running";
+    const videoId = status.result?.video_id;
+    if (typeof videoId === "string" && /^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+      $("clio-source").href = "https://www.youtube.com/watch?v=" + videoId;
+      $("clio-source").textContent = status.result.title || "Original video";
+      $("clio-source").hidden = false;
+    }
+    if (["running", "ready"].includes(status.state)) clioTimer = setTimeout(updateClio, 4000);
+  } catch (error) {
+    $("clio-status").textContent = error.message;
+    $("clio-submit").disabled = false;
+    clioTimer = setTimeout(updateClio, 8000);
+  }
+}
+
+$("clio-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const topic = $("clio-topic").value.trim();
+  if (!topic) return;
+  clearTimeout(clioTimer);
+  $("clio-submit").disabled = true;
+  $("clio-source").hidden = true;
+  $("clio-status").textContent = "Starting the search…";
+  try {
+    const data = await post("/api/clio", { topic });
+    clioJob = data.job_id;
+    sessionStorage.setItem("clio-job", clioJob);
+    updateClio();
+  } catch (error) {
+    $("clio-status").textContent = error.message;
+    $("clio-submit").disabled = false;
+  }
+});
+if (clioJob) updateClio();
+
 $("refresh").addEventListener("click", refresh);
 document.addEventListener("click", (event) => {
   const expander = event.target.closest("[data-expand]");
