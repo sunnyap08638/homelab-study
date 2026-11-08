@@ -167,6 +167,17 @@ textarea { width: 100%; resize: vertical; min-height: 76px; color: var(--text); 
 .chat-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
 .chat-actions small { color: var(--muted); font-size: 11px; line-height: 1.4; }
 .chat-actions button { flex: 0 0 auto; }
+
+#clio-preview { margin-top: 16px; }
+#clio-player { display: block; width: min(100%, 760px); aspect-ratio: 16 / 9; min-height: 200px; border: 0; background: #0b0e10; }
+.clio-actions { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.clio-actions label { display: grid; gap: 4px; }
+.clio-actions input, .clio-actions select { font: inherit; color: inherit; background: #151819; border: 1px solid var(--line); border-radius: 6px; padding: 7px; }
+#clio-start { width: 8rem; }
+#clio-clips { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 185px), 1fr)); gap: 14px; }
+#clio-clips fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+#clio-clips video { display: block; width: 100%; height: min(50vh, 330px); background: #0b0e10; }
+.clio-decisions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
 .steps { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
 .steps article { padding: 14px; border: 1px solid var(--line); background: #16191a; border-radius: 8px; }
 .steps article > span { color: var(--green); font: 13px var(--mono); }

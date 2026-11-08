@@ -8,6 +8,7 @@ import json
 import logging
 from pathlib import Path
 import re
+import shutil
 import threading
 import time
 from urllib.error import HTTPError, URLError
@@ -200,9 +201,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Referrer-Policy", "no-referrer")
+        page = mime == "text/html" and self.path == "/"
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin" if page else "no-referrer")
+        frames = "; frame-src https://www.youtube.com" if page else ""
         self.send_header("Content-Security-Policy",
-                         "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+                         "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'" + frames)
         for name, value in headers.items():
             self.send_header(name.replace("_", "-"), value)
         self.end_headers()
@@ -255,6 +258,39 @@ class Handler(BaseHTTPRequestHandler):
         except (OSError, URLError, ValueError):
             self.json(503, {"error": "Clio is unavailable on the homeserver."})
 
+    def clio_clip(self, job_id, name):
+        if isinstance(self.server.dashboard, Demo):
+            self.json(503, {"error": "Clio is available on the live dashboard."})
+            return
+        headers = {}
+        if self.headers.get("Range"):
+            headers["Range"] = self.headers["Range"]
+        request = Request(f"http://127.0.0.1:8765/jobs/{job_id}/{name}", headers=headers)
+        try:
+            response = urlopen(request, timeout=10)
+        except HTTPError as error:
+            with error:
+                content_range = error.headers.get("Content-Range")
+                range_header = {"Content_Range": content_range} if content_range else {}
+                self.json(error.code, {"error": "This clip is unavailable."}, **range_header)
+            return
+        except (OSError, URLError):
+            self.json(503, {"error": "Clio is unavailable on the homeserver."})
+            return
+        with response:
+            self.send_response(response.status)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            for name in ("Content-Length", "Content-Range", "Accept-Ranges"):
+                if name in response.headers:
+                    self.send_header(name, response.headers[name])
+            self.end_headers()
+            try:
+                shutil.copyfileobj(response, self.wfile)
+            except (OSError, ConnectionResetError):
+                pass
+
     def do_GET(self):
         # Safari can fetch app artwork without forwarding the dashboard login.
         if self.path in APP_METADATA and self.expected_origin() is not None:
@@ -266,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path in ASSETS:
             filename, mime = ASSETS[self.path]
             self.send(200, (ROOT / filename).read_bytes(), mime)
+        elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clip-0[1-3]\.mp4)", self.path):
+            self.clio_clip(*match.groups())
         elif re.fullmatch(r"/api/clio/[0-9a-f]{32}", self.path):
             self.clio_request("/api/jobs/" + self.path.rsplit("/", 1)[1])
         elif self.path == "/api/snapshot":
@@ -289,7 +327,11 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 raise ValueError("Send a JSON object.")
             if self.path == "/api/clio":
-                self.clio_request("/api/jobs", {"topic": body.get("topic")})
+                self.clio_request("/api/jobs", {"topic": body.get("topic"), "mode": body.get("mode", "review")})
+                return
+            if match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clips|review)", self.path):
+                job_id, action = match.groups()
+                self.clio_request(f"/api/jobs/{job_id}/{action}", body)
                 return
             if self.path == "/api/chat":
                 result = self.server.dashboard.chat(checked_messages(body))

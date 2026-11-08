@@ -88,14 +88,48 @@
       </section>
       <section class="view" id="clio" hidden>
         <div class="page-heading"><div><div class="eyebrow"><i></i> MEDIA</div><h1>Project Clio</h1>
-          <p>Find recent YouTube videos and send captioned clips to your MacBook.</p></div></div>
-        <section class="panel"><div class="panel-head"><div><h2>Find clips</h2><p>Enter a topic, creator, or game.</p></div></div>
+          <p>Find YouTube highlights and send captioned clips to your MacBook.</p></div></div>
+        <section class="panel"><div class="panel-head"><div><h2>Find clips</h2><p>Enter a topic or paste a YouTube video link.</p></div></div>
           <div class="panel-body prose">
-            <form id="clio-form"><label class="sr-only" for="clio-topic">Topic</label>
-              <textarea id="clio-topic" placeholder="GTA 5" rows="2" maxlength="160" required></textarea>
-              <div class="chat-actions"><small>Results arrive in Desktop → Clio.</small><button id="clio-submit" class="primary" type="submit">Find clips</button></div>
+            <form id="clio-form"><label class="sr-only" for="clio-topic">Topic or YouTube link</label>
+              <textarea id="clio-topic" placeholder="GTA 5 roleplay from the past 6 days" rows="2" maxlength="160" required></textarea>
+              <div class="clio-actions">
+                <label>Clipping mode
+                  <select id="clio-mode">
+                    <option value="review">Review suggested clips</option>
+                    <option value="auto">Automatic delivery</option>
+                    <option value="manual">Choose clips myself</option>
+                  </select>
+                </label>
+                <button id="clio-submit" class="primary" type="submit">Find clips</button>
+              </div>
             </form>
-            <p id="clio-status" role="status"></p><p><a id="clio-source" hidden>Original video</a></p>
+            <p id="clio-status" role="status"></p>
+            <p id="clio-notice" role="status"></p>
+          </div>
+        </section>
+        <section class="panel" id="clio-preview" hidden>
+          <div class="panel-head"><div><h2>Chosen video</h2><p><a id="clio-source" target="_blank" rel="noopener">Open on YouTube</a></p></div></div>
+          <div class="panel-body prose">
+            <iframe id="clio-player" title="Chosen YouTube video" referrerpolicy="strict-origin-when-cross-origin" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>
+            <form id="clio-manual" hidden>
+              <h3>Choose a 30-second clip</h3>
+              <div class="clio-actions">
+                <label>Start time <input id="clio-start" type="text" placeholder="1:23" required></label>
+                <label>Clip slot <select id="clio-slot"></select></label>
+                <button type="button" id="clio-preview-range">Preview range</button>
+                <button type="button" id="clio-full-video">Full video</button>
+                <button class="primary" type="submit">Render clip</button>
+              </div>
+            </form>
+            <form id="clio-review">
+              <h3 id="clio-highlights" hidden>Highlighted clips</h3>
+              <div id="clio-clips"></div>
+              <div class="clio-actions" id="clio-review-actions" hidden>
+                <button type="button" id="clio-reject">Reject whole video</button>
+                <button type="submit" id="clio-save" class="primary">Submit review &amp; find next video</button>
+              </div>
+            </form>
           </div>
         </section>
       </section>

@@ -254,33 +254,153 @@ async function post(url, body) {
 }
 let clioJob = sessionStorage.getItem("clio-job");
 let clioTimer;
+let clioPending = false;
+let clioResult;
+let clioView;
+$("clio-mode").value = sessionStorage.getItem("clio-mode") || "review";
+$("clio-mode").addEventListener("change", () => sessionStorage.setItem("clio-mode", $("clio-mode").value));
+
+function setClioJob(id) {
+  clioJob = id;
+  sessionStorage.setItem("clio-job", id);
+  $("clio-preview").hidden = true;
+  $("clio-player").removeAttribute("src");
+  $("clio-player").removeAttribute("data-video-id");
+  $("clio-start").value = "";
+  clioView = null;
+  clioResult = null;
+}
+
+function sourcePlayer(videoId, range = "") {
+  $("clio-player").src = "https://www.youtube.com/embed/" + videoId + "?playsinline=1" + range;
+}
+
+function clipTime(ms) {
+  const seconds = Math.floor(ms / 1000);
+  return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+}
+
+function showClioResult(status) {
+  const result = status.result;
+  const videoId = result?.video_id;
+  if (!/^[A-Za-z0-9_-]{11}$/.test(videoId || "")) return;
+  clioResult = result;
+  $("clio-preview").hidden = false;
+  if ($("clio-player").dataset.videoId !== videoId) {
+    $("clio-player").dataset.videoId = videoId;
+    sourcePlayer(videoId);
+    $("clio-source").href = "https://www.youtube.com/watch?v=" + videoId;
+    $("clio-source").textContent = result.title || "Open on YouTube";
+  }
+
+  const moments = result.moments || [];
+  const reviewing = status.state === "review";
+  const playable = reviewing || status.state === "ready";
+  $("clio-manual").hidden = !reviewing;
+  $("clio-review-actions").hidden = !reviewing;
+  $("clio-save").hidden = !moments.length;
+  $("clio-save").textContent = result.direct_link ? "Submit review" : "Submit review & find next video";
+  $("clio-reject").textContent = result.direct_link ? "Reject whole video" : "Reject video & find next";
+  const view = clioJob + ":" + status.state;
+  if (view === clioView) return;
+  clioView = view;
+  $("clio-clips").replaceChildren();
+  $("clio-highlights").hidden = !moments.length;
+  for (const moment of moments) {
+    const card = document.createElement("fieldset");
+    const legend = document.createElement("legend");
+    legend.textContent = "Clip " + moment.rank + " · " + clipTime(moment.start_ms) + "–" + clipTime(moment.end_ms);
+    card.append(legend);
+    if (playable && /^clip-0[1-3]\.mp4$/.test(moment.file || "")) {
+      const video = document.createElement("video");
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = "none";
+      video.src = "/api/clio/" + encodeURIComponent(clioJob) + "/" + moment.file;
+      card.append(video);
+    } else {
+      const link = document.createElement("a");
+      link.href = "https://www.youtube.com/watch?v=" + videoId + "&t=" + Math.floor(moment.start_ms / 1000);
+      link.textContent = "Open at this timestamp on YouTube";
+      link.target = "_blank";
+      link.rel = "noopener";
+      card.append(link);
+    }
+    if (reviewing) {
+      const decisions = document.createElement("div");
+      decisions.className = "clio-decisions";
+      for (const value of ["approve", "reject"]) {
+        const label = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "clip-" + moment.rank;
+        input.value = value;
+        input.required = true;
+        label.append(input, value === "approve" ? "Approve" : "Reject");
+        decisions.append(label);
+      }
+      card.append(decisions);
+    }
+    $("clio-clips").append(card);
+  }
+  if (reviewing) {
+    const slots = [1, 2, 3];
+    const occupied = new Set(moments.map((moment) => moment.rank));
+    $("clio-slot").replaceChildren(...slots.map((rank) => new Option(
+      (occupied.has(rank) ? "Replace clip " : "Add clip ") + rank, rank
+    )));
+    $("clio-slot").value = slots.find((rank) => !occupied.has(rank)) || 1;
+  }
+}
 
 async function updateClio() {
   clearTimeout(clioTimer);
-  if (!clioJob) return;
+  if (!clioJob || clioPending) return;
+  const job = clioJob;
   try {
-    const response = await fetch("/api/clio/" + encodeURIComponent(clioJob), { signal: AbortSignal.timeout(7000) });
+    const response = await fetch("/api/clio/" + encodeURIComponent(job), { signal: AbortSignal.timeout(7000) });
     const status = await response.json();
+    if (job !== clioJob || clioPending) return;
     if (!response.ok) throw new Error(status.error || "Clio is unavailable.");
+    if (status.next_job_id) {
+      setClioJob(status.next_job_id);
+      return updateClio();
+    }
     const count = status.result?.moments?.length || 0;
     const messages = {
+      review: count ? "Preview the clips and choose which to send to your MacBook." : "Choose a start time to cut a clip from this source.",
       ready: `${count} clips ready. Waiting for your MacBook to collect them.`,
       delivered: `${count} clips saved to Desktop → Clio.`,
+      rejected: "Video rejected.",
       expired: "Delivery expired after 24 hours. Submit the topic again to regenerate the clips.",
     };
-    $("clio-status").textContent = messages[status.state] || status.message || "";
+    $("clio-status").textContent = status.message || messages[status.state] || "";
     $("clio-submit").disabled = status.state === "running";
-    const videoId = status.result?.video_id;
-    if (typeof videoId === "string" && /^[A-Za-z0-9_-]{11}$/.test(videoId)) {
-      $("clio-source").href = "https://www.youtube.com/watch?v=" + videoId;
-      $("clio-source").textContent = status.result.title || "Original video";
-      $("clio-source").hidden = false;
-    }
+    showClioResult(status);
     if (["running", "ready"].includes(status.state)) clioTimer = setTimeout(updateClio, 4000);
   } catch (error) {
+    if (job !== clioJob || clioPending) return;
     $("clio-status").textContent = error.message;
     $("clio-submit").disabled = false;
     clioTimer = setTimeout(updateClio, 8000);
+  }
+}
+
+async function clioAction(action) {
+  if (clioPending) return;
+  clioPending = true;
+  clearTimeout(clioTimer);
+  $("clio-notice").textContent = "";
+  const buttons = document.querySelectorAll("#clio form button");
+  buttons.forEach((button) => { button.disabled = true; });
+  try {
+    await action();
+  } catch (error) {
+    $("clio-notice").textContent = error.message;
+  } finally {
+    buttons.forEach((button) => { button.disabled = false; });
+    clioPending = false;
+    updateClio();
   }
 }
 
@@ -288,20 +408,65 @@ $("clio-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const topic = $("clio-topic").value.trim();
   if (!topic) return;
-  clearTimeout(clioTimer);
-  $("clio-submit").disabled = true;
-  $("clio-source").hidden = true;
-  $("clio-status").textContent = "Starting the search…";
+  await clioAction(async () => {
+    const data = await post("/api/clio", { topic, mode: $("clio-mode").value });
+    setClioJob(data.job_id);
+    $("clio-status").textContent = "Starting the search…";
+  });
+});
+
+function clioRange() {
+  const parts = $("clio-start").value.trim().split(":");
+  if (parts.length > 3 || parts.some((part, index) => !/^\d+$/.test(part) || (index > 0 && Number(part) >= 60))) {
+    throw new Error("Enter a start time in seconds, minutes:seconds, or hours:minutes:seconds.");
+  }
+  const start = parts.reduce((seconds, part) => seconds * 60 + Number(part), 0);
+  const duration = clioResult.duration_seconds;
+  const end = start + Math.min(30, duration);
+  if (end > duration) throw new Error("Choose a start time with enough video left to cut the clip.");
+  return { start, end };
+}
+
+$("clio-preview-range").addEventListener("click", () => {
   try {
-    const data = await post("/api/clio", { topic });
-    clioJob = data.job_id;
-    sessionStorage.setItem("clio-job", clioJob);
-    updateClio();
+    const { start, end } = clioRange();
+    $("clio-notice").textContent = "";
+    sourcePlayer(clioResult.video_id, "&start=" + start + "&end=" + Math.ceil(end));
   } catch (error) {
-    $("clio-status").textContent = error.message;
-    $("clio-submit").disabled = false;
+    $("clio-notice").textContent = error.message;
   }
 });
+$("clio-full-video").addEventListener("click", () => sourcePlayer(clioResult.video_id));
+
+$("clio-manual").addEventListener("submit", (event) => {
+  event.preventDefault();
+  clioAction(async () => {
+    const { start } = clioRange();
+    await post("/api/clio/" + encodeURIComponent(clioJob) + "/clips", {
+      start_ms: start * 1000, rank: Number($("clio-slot").value),
+    });
+    clioView = null;
+  });
+});
+
+function submitClioReview(approved) {
+  clioAction(async () => {
+    const data = await post("/api/clio/" + encodeURIComponent(clioJob) + "/review", { approved });
+    if (data.next_job_id) setClioJob(data.next_job_id);
+    $("clio-notice").textContent = approved.length
+      ? approved.length + (approved.length === 1 ? " clip queued" : " clips queued") + " for Desktop → Clio."
+      : "Video rejected.";
+  });
+}
+
+$("clio-review").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const approved = [...new FormData(event.currentTarget)]
+    .filter(([, decision]) => decision === "approve")
+    .map(([name]) => Number(name.slice(5)));
+  submitClioReview(approved);
+});
+$("clio-reject").addEventListener("click", () => submitClioReview([]));
 if (clioJob) updateClio();
 
 $("refresh").addEventListener("click", refresh);
