@@ -102,7 +102,6 @@
                 <label>Clipping mode
                   <select id="clio-mode">
                     <option value="review">Review suggested clips</option>
-                    <option value="auto">Automatic delivery</option>
                     <option value="manual">Choose clips myself</option>
                   </select>
                 </label>
@@ -144,8 +143,13 @@
               <div class="clio-actions" id="clio-review-actions" hidden>
                 <button type="button" id="clio-reject">Reject whole video</button>
                 <button type="button" id="clio-generate" class="primary" hidden>Generate clips</button>
-                <button type="submit" id="clio-save" class="primary">Submit review &amp; find next video</button>
-                <button type="button" id="clio-youtube" hidden>Upload approved clips to YouTube…</button>
+                <label id="clio-destination-label" hidden>Destination
+                  <select id="clio-destination">
+                    <option value="youtube">YouTube</option>
+                    <option value="desktop">MacBook Desktop</option>
+                  </select>
+                </label>
+                <button type="submit" id="clio-save" class="primary">Review approved clips…</button>
               </div>
             </form>
           </div>
@@ -153,17 +157,23 @@
         </div>
         <div id="clio-weekly-panel" hidden>
           <section class="panel">
-            <div class="panel-head"><div><h2>Weekly clips</h2><p>Play the clips, approve the ones you want, and upload your selection to YouTube together.</p></div></div>
+            <div class="panel-head"><div><h2>Weekly clips</h2><p>Play the clips, approve the ones you want, and send them to YouTube or your MacBook Desktop.</p></div></div>
             <div class="panel-body prose">
               <p id="clio-batch-status" role="status"></p>
               <div class="clio-actions" id="clio-batch-actions" hidden>
                 <button type="button" id="clio-batch-select">Select all</button>
+                <label>Destination
+                  <select id="clio-batch-destination">
+                    <option value="youtube">YouTube</option>
+                    <option value="desktop">MacBook Desktop</option>
+                  </select>
+                </label>
                 <button type="button" id="clio-batch-upload" class="primary" disabled>Review upload</button>
               </div>
-              <p id="clio-batch-caption-help" hidden>Previews show the original cut. Your caption choice is applied to the YouTube upload.</p>
+              <p id="clio-batch-caption-help" hidden>Previews show the original cut. Clio applies your caption choice when it sends the clip.</p>
               <div id="clio-batch-clips"></div>
               <section id="clio-batch-activity" hidden>
-                <h3>YouTube uploads</h3>
+                <h3>Recent deliveries</h3>
                 <ul id="clio-batch-results" aria-live="polite"></ul>
               </section>
             </div>
@@ -185,8 +195,8 @@
             <p id="clio-youtube-channel"></p>
             <p id="clio-youtube-error" role="alert"></p>
             <div id="clio-youtube-drafts"></div>
-            <p>Clio sends the approved clips directly to YouTube.</p>
-            <p>By clicking ‘Upload,’ you certify that the content you are uploading complies with the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a> (including the YouTube Community Guidelines). Please be sure not to violate others’ copyright or privacy rights.</p>
+            <p id="clio-approval-details"></p>
+            <p id="clio-youtube-terms">By clicking ‘Upload,’ you certify that the content you are uploading complies with the <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a> (including the YouTube Community Guidelines). Please be sure not to violate others’ copyright or privacy rights.</p>
             <div class="clio-actions">
               <button type="button" id="clio-youtube-cancel">Cancel</button>
               <button type="submit" id="clio-youtube-confirm" class="primary" disabled>Upload to YouTube</button>
