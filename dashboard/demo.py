@@ -25,6 +25,8 @@ class Demo:
              ["jellyfin"]),
             ("navidrome", "Navidrome", "Music streaming", "Docker Compose", 0.6, 92,
              [("Music library", 12.6), ("Database & cache", 0.19)], ["navidrome"]),
+            ("project-clio", "Project Clio", "YouTube highlights & clips", "Docker Compose", 0.3, 224,
+             [], ["project-clio-clio-1"]),
             ("mneme", "Mneme", "Flashcards & study tools", "K3s", 1.1, 48,
              [("SQLite & saved media", 2.34), ("Temporary imports", 0)], ["home-study / app"]),
         ):

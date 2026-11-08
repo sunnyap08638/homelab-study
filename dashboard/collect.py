@@ -12,9 +12,10 @@ from urllib.request import urlopen
 
 HOME = Path.home()
 PROJECTS = {
-    "immich": ("Immich", "Photos & backup", HOME / "immich-app"),
-    "jellyfin": ("Jellyfin", "Movies & television", HOME / "jellyfin"),
-    "navidrome": ("Navidrome", "Music streaming", HOME / "navidrome"),
+    "immich": ("Immich", "Photos & backup", HOME / "immich-app/docker-compose.yml"),
+    "jellyfin": ("Jellyfin", "Movies & television", HOME / "jellyfin/docker-compose.yml"),
+    "navidrome": ("Navidrome", "Music streaming", HOME / "navidrome/docker-compose.yml"),
+    "project-clio": ("Project Clio", "YouTube highlights & clips", HOME / "project-clio/compose.yaml"),
 }
 VOLUMES = {
     "immich": [("Photo library", HOME / "immich-app/library"),
@@ -114,10 +115,10 @@ def project_state(rows):
 
 
 def project_service(key, rows):
-    name, description, directory = PROJECTS[key]
+    name, description, compose_file = PROJECTS[key]
     running = [row for row in rows if row["state"] == "running"]
     return dict(id=key, name=name, description=description, runtime="Docker Compose",
-                state=project_state(rows), controls=bool(rows) and (directory / "docker-compose.yml").is_file(),
+                state=project_state(rows), controls=bool(rows) and compose_file.is_file(),
                 cpu=sum_known([row["cpu"] for row in running]),
                 memory=sum_known([row["memory"] for row in running]), components=rows)
 
@@ -249,6 +250,6 @@ def compose_action(key, action, expected):
     rows = docker_rows().get(key, [])
     if project_state(rows) != expected or not rows:
         raise ValueError("The service changed since the last update. Refresh and try again.")
-    _, _, directory = PROJECTS[key]
-    run("docker", "compose", "--project-directory", str(directory), "-f",
-        str(directory / "docker-compose.yml"), "-p", key, action, timeout=75)
+    _, _, compose_file = PROJECTS[key]
+    run("docker", "compose", "--project-directory", str(compose_file.parent), "-f",
+        str(compose_file), "-p", key, action, timeout=75)
