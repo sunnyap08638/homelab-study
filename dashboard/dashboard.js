@@ -294,13 +294,16 @@ function showClioResult(status) {
   }
 
   const moments = result.moments || [];
+  const previewing = status.state === "source_review";
   const reviewing = status.state === "review";
   const playable = reviewing || status.state === "ready";
   $("clio-manual").hidden = !reviewing;
-  $("clio-review-actions").hidden = !reviewing;
-  $("clio-save").hidden = !moments.length;
+  $("clio-review-actions").hidden = !reviewing && !previewing;
+  $("clio-generate").hidden = !previewing;
+  $("clio-save").hidden = !reviewing || !moments.length;
   $("clio-save").textContent = result.direct_link ? "Submit review" : "Submit review & find next video";
-  $("clio-reject").textContent = result.direct_link ? "Reject whole video" : "Reject video & find next";
+  const rejectLabel = previewing ? "Skip video" : "Reject video";
+  $("clio-reject").textContent = result.direct_link ? rejectLabel : rejectLabel + " & find next";
   const view = clioJob + ":" + status.state;
   if (view === clioView) return;
   clioView = view;
@@ -368,6 +371,7 @@ async function updateClio() {
     }
     const count = status.result?.moments?.length || 0;
     const messages = {
+      source_review: "Watch the chosen video, then generate clips or skip it.",
       review: count ? "Preview the clips and choose which to send to your MacBook." : "Choose a start time to cut a clip from this source.",
       ready: `${count} clips ready. Waiting for your MacBook to collect them.`,
       delivered: `${count} clips saved to Desktop → Clio.`,
@@ -467,6 +471,9 @@ $("clio-review").addEventListener("submit", (event) => {
   submitClioReview(approved);
 });
 $("clio-reject").addEventListener("click", () => submitClioReview([]));
+$("clio-generate").addEventListener("click", () => clioAction(async () => {
+  await post("/api/clio/" + encodeURIComponent(clioJob) + "/generate", {});
+}));
 if (clioJob) updateClio();
 
 $("refresh").addEventListener("click", refresh);

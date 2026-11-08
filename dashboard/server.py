@@ -329,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/clio":
                 self.clio_request("/api/jobs", {"topic": body.get("topic"), "mode": body.get("mode", "review")})
                 return
-            if match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clips|review)", self.path):
+            if match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clips|generate|review)", self.path):
                 job_id, action = match.groups()
                 self.clio_request(f"/api/jobs/{job_id}/{action}", body)
                 return
