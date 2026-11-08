@@ -174,6 +174,15 @@ textarea { width: 100%; resize: vertical; min-height: 76px; color: var(--text); 
 .clio-actions label { display: grid; gap: 4px; }
 .clio-actions input, .clio-actions select { font: inherit; color: inherit; background: #151819; border: 1px solid var(--line); border-radius: 6px; padding: 7px; }
 .clio-weekly { margin-top: 16px; }
+.clio-tabs { display: flex; gap: 16px; margin-bottom: 16px; }
+.clio-tabs a { padding: 6px 2px; border-bottom: 2px solid transparent; text-decoration: none; color: var(--muted); }
+.clio-tabs a[aria-current] { border-color: var(--green); color: var(--text); }
+.clio-batch-source { margin-top: 18px; }
+.clio-clip-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 230px)); gap: 14px; }
+.clio-clip-grid fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.clio-clip-grid video { display: block; width: 100%; aspect-ratio: 9 / 16; max-height: 320px; background: #0b0e10; }
+.clio-clip-grid label { display: block; margin-top: 8px; }
+.clio-clip-grid select { display: block; width: 100%; }
 #clio-weekly-items { padding-left: 1.5rem; }
 #clio-weekly-items li { padding: 8px 0; }
 #clio-weekly-items li span { display: block; }

@@ -304,6 +304,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, (ROOT / filename).read_bytes(), mime)
         elif self.path == "/api/clio/weekly":
             self.clio_request("/api/weekly")
+        elif self.path == "/api/clio/weekly/clips":
+            self.clio_request("/api/weekly/clips")
         elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clip-0[1-3]\.mp4)", self.path):
             self.clio_clip(*match.groups())
         elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/youtube-drafts", self.path):
@@ -325,7 +327,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             length = self.headers.get("Content-Length", "")
-            if not re.fullmatch(r"[0-9]{1,5}", length) or not 0 < int(length) <= 32_768:
+            limit = 1024 * 1024 if self.path == "/api/clio/weekly/clips" else 32_768
+            if not re.fullmatch(r"[0-9]{1,7}", length) or not 0 < int(length) <= limit:
                 raise ValueError("The request is too large or empty.")
             body = json.loads(self.rfile.read(int(length)))
             if not isinstance(body, dict):
@@ -335,6 +338,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if self.path == "/api/clio/weekly":
                 self.clio_request("/api/weekly", {})
+                return
+            if self.path == "/api/clio/weekly/clips":
+                self.clio_request("/api/weekly/clips", body)
                 return
             if match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clips|generate|review)", self.path):
                 job_id, action = match.groups()
