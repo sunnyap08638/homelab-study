@@ -302,6 +302,7 @@ function showClioResult(status) {
   $("clio-review-actions").hidden = !reviewing && !previewing;
   $("clio-generate").hidden = !previewing;
   $("clio-save").hidden = !reviewing || !moments.length;
+  $("clio-youtube").hidden = !reviewing || !moments.length;
   $("clio-save").textContent = result.direct_link ? "Submit review" : "Submit review & find next video";
   const rejectLabel = previewing ? "Skip video" : "Reject video";
   $("clio-reject").textContent = result.direct_link ? rejectLabel : rejectLabel + " & find next";
@@ -454,9 +455,23 @@ $("clio-manual").addEventListener("submit", (event) => {
   });
 });
 
-function submitClioReview(approved) {
+function submitClioReview(approved, youtube) {
   clioAction(async () => {
-    const data = await post("/api/clio/" + encodeURIComponent(clioJob) + "/review", { approved });
+    const job = clioJob;
+    let data;
+    try {
+      data = await post("/api/clio/" + encodeURIComponent(job) + "/review",
+        youtube ? { approved, youtube } : { approved });
+    } catch (error) {
+      if (!youtube) throw error;
+      $("clio-youtube-error").textContent = error.message;
+      return;
+    }
+    if (youtube) {
+      $("clio-youtube-dialog").close();
+      sessionStorage.setItem("clio-youtube-job", job);
+      updateClioUploads();
+    }
     if (data.next_job_id) setClioJob(data.next_job_id);
     $("clio-notice").textContent = approved.length
       ? approved.length + (approved.length === 1 ? " clip queued" : " clips queued") + " for Desktop → Clio."
@@ -464,18 +479,130 @@ function submitClioReview(approved) {
   });
 }
 
-$("clio-review").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const approved = [...new FormData(event.currentTarget)]
+function approvedClioClips() {
+  return [...new FormData($("clio-review"))]
     .filter(([, decision]) => decision === "approve")
     .map(([name]) => Number(name.slice(5)));
-  submitClioReview(approved);
+}
+
+$("clio-review").addEventListener("submit", (event) => {
+  event.preventDefault();
+  submitClioReview(approvedClioClips());
 });
 $("clio-reject").addEventListener("click", () => submitClioReview([]));
 $("clio-generate").addEventListener("click", () => clioAction(async () => {
   await post("/api/clio/" + encodeURIComponent(clioJob) + "/generate", {});
 }));
+
+let youtubeDraft;
+$("clio-youtube").addEventListener("click", async () => {
+  if (!$("clio-review").reportValidity()) return;
+  const approved = approvedClioClips();
+  if (!approved.length) {
+    $("clio-notice").textContent = "Approve at least one clip before uploading.";
+    return;
+  }
+  const job = clioJob;
+  const fields = $("clio-youtube-drafts");
+  fields.replaceChildren();
+  youtubeDraft = null;
+  $("clio-youtube-channel").textContent = "Loading upload drafts…";
+  $("clio-youtube-error").textContent = "";
+  $("clio-youtube-confirm").disabled = true;
+  $("clio-youtube-dialog").showModal();
+  try {
+    const response = await fetch("/api/clio/" + encodeURIComponent(job) + "/youtube-drafts");
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not load YouTube drafts.");
+    youtubeDraft = { job, approved, channelId: data.channel.id };
+    $("clio-youtube-channel").textContent = "Channel: " + data.channel.title;
+    for (const clip of data.clips.filter((item) => approved.includes(item.rank))) {
+      const card = document.createElement("fieldset");
+      const legend = document.createElement("legend");
+      legend.textContent = "Clip " + clip.rank;
+      card.append(legend);
+      const title = document.createElement("input");
+      title.value = clip.title;
+      title.maxLength = 100;
+      title.required = true;
+      const description = document.createElement("textarea");
+      description.value = clip.description;
+      description.rows = 5;
+      const privacy = document.createElement("select");
+      privacy.append(new Option("Private", "private"), new Option("Unlisted", "unlisted"), new Option("Public", "public"));
+      privacy.value = clip.privacy;
+      const audience = document.createElement("select");
+      audience.required = true;
+      audience.append(new Option("Choose an audience", ""), new Option("Made for kids", "yes"),
+        new Option("Not made for kids", "no"));
+      for (const [name, label, input] of [["title", "Title", title], ["description", "Description and hashtags", description],
+        ["privacy", "Visibility", privacy], ["kids", "Audience", audience]]) {
+        input.name = name + "-" + clip.rank;
+        const wrapper = document.createElement("label");
+        wrapper.append(label, input);
+        card.append(wrapper);
+      }
+      fields.append(card);
+    }
+    $("clio-youtube-confirm").disabled = false;
+  } catch (error) {
+    $("clio-youtube-channel").textContent = "";
+    $("clio-youtube-error").textContent = error.message;
+  }
+});
+$("clio-youtube-cancel").addEventListener("click", () => $("clio-youtube-dialog").close());
+$("clio-youtube-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!youtubeDraft || youtubeDraft.job !== clioJob) return;
+  $("clio-youtube-error").textContent = "";
+  const values = new FormData(event.currentTarget);
+  const clips = youtubeDraft.approved.map((rank) => ({
+    rank, title: values.get("title-" + rank), description: values.get("description-" + rank),
+    privacy: values.get("privacy-" + rank), made_for_kids: values.get("kids-" + rank) === "yes",
+  }));
+  submitClioReview(youtubeDraft.approved, { channel_id: youtubeDraft.channelId, clips, confirmed: true });
+});
+
+let clioUploadTimer;
+async function updateClioUploads() {
+  clearTimeout(clioUploadTimer);
+  const job = sessionStorage.getItem("clio-youtube-job");
+  if (!job) return;
+  try {
+    const response = await fetch("/api/clio/" + encodeURIComponent(job), { signal: AbortSignal.timeout(7000) });
+    const data = await response.json();
+    if (job !== sessionStorage.getItem("clio-youtube-job")) return;
+    if (!response.ok) throw new Error("Could not check YouTube uploads.");
+    const uploads = data.youtube_uploads || [];
+    const list = $("clio-youtube-status");
+    list.hidden = !uploads.length;
+    if (list.dataset.snapshot !== JSON.stringify(uploads)) {
+      list.dataset.snapshot = JSON.stringify(uploads);
+      list.replaceChildren(...uploads.map((item) => {
+        const entry = document.createElement("li");
+        entry.textContent = "YouTube clip " + item.rank + " · ";
+        if (item.state === "uploaded" && /^[A-Za-z0-9_-]{11}$/.test(item.video_id || "")) {
+          const link = document.createElement("a");
+          link.href = "https://studio.youtube.com/video/" + item.video_id + "/edit";
+          link.textContent = "Uploaded (" + item.privacy + ")";
+          link.target = "_blank";
+          link.rel = "noopener";
+          entry.append(link);
+        } else {
+          entry.append(item.message || (item.state === "uploading" ? "Uploading…" : "Queued"));
+        }
+        return entry;
+      }));
+    }
+    if (uploads.some((item) => item.state === "queued" || item.state === "uploading")) {
+      clioUploadTimer = setTimeout(updateClioUploads, 4000);
+    }
+  } catch {
+    clioUploadTimer = setTimeout(updateClioUploads, 8000);
+  }
+}
 if (clioJob) updateClio();
+updateClioUploads();
 
 $("refresh").addEventListener("click", refresh);
 document.addEventListener("click", (event) => {

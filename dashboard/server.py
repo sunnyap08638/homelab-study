@@ -304,6 +304,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send(200, (ROOT / filename).read_bytes(), mime)
         elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/(clip-0[1-3]\.mp4)", self.path):
             self.clio_clip(*match.groups())
+        elif match := re.fullmatch(r"/api/clio/([0-9a-f]{32})/youtube-drafts", self.path):
+            self.clio_request(f"/api/jobs/{match[1]}/youtube-drafts")
         elif re.fullmatch(r"/api/clio/[0-9a-f]{32}", self.path):
             self.clio_request("/api/jobs/" + self.path.rsplit("/", 1)[1])
         elif self.path == "/api/snapshot":
