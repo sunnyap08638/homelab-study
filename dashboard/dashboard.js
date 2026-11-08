@@ -909,11 +909,12 @@ async function updateWeeklyClips() {
     if (!response.ok) throw new Error(data.error || "Could not load weekly clips.");
     weeklyChannels = data.channels || (data.channel ? [data.channel] : []);
     if (renderWeeklyClips(data.sources)) delay = 5000;
-    status.textContent = weeklyClips.length
-      ? weeklyClips.length + (weeklyClips.length === 1 ? " clip available" : " clips available") +
-        (weeklyChannels.length ? " · YouTube: " + weeklyChannels.map(({ title }) => title).join(", ")
-          : " · Connect a YouTube channel to upload to YouTube.")
-      : "No weekly clips are awaiting approval. See the source queue for preparation status.";
+    const availability = weeklyClips.length
+      ? weeklyClips.length + (weeklyClips.length === 1 ? " clip available" : " clips available")
+      : "No weekly clips are awaiting approval.";
+    status.textContent = availability + (weeklyChannels.length
+      ? " · Connected YouTube channels: " + weeklyChannels.map(({ title }) => title).join(", ")
+      : " · Connect a YouTube channel to upload to YouTube.");
   } catch (error) {
     if (request !== weeklyClipRequest) return;
     status.textContent = error.message;
