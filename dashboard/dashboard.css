@@ -205,6 +205,7 @@ textarea { width: 100%; resize: vertical; min-height: 76px; color: var(--text); 
 #clio-youtube-dialog { width: min(92vw, 640px); max-width: none; max-height: 88vh; overflow: auto; }
 #clio-youtube-dialog fieldset { min-width: 0; border: 1px solid var(--line); border-radius: 8px; margin: 12px 0; padding: 12px; }
 #clio-youtube-dialog label { display: grid; gap: 4px; margin-bottom: 10px; }
+#clio-youtube-dialog #clio-youtube-channel-options label { display: flex; align-items: center; gap: 8px; }
 #clio-youtube-dialog input, #clio-youtube-dialog select { font: inherit; color: inherit; background: #151819; border: 1px solid var(--line); border-radius: 6px; padding: 7px; }
 .steps { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px; }
 .steps article { padding: 14px; border: 1px solid var(--line); background: #16191a; border-radius: 8px; }

@@ -77,7 +77,7 @@ function notify(message) {
 }
 function navigate() {
   const hash = location.hash.slice(1);
-  const weekly = hash === "clio-weekly";
+  const weekly = hash === "clio-queue" || hash === "clio-weekly";
   const view = weekly ? "clio" : Object.hasOwn(views, hash) ? hash : "overview";
   document.querySelectorAll(".view").forEach((section) => { section.hidden = section.id !== view; });
   document.querySelectorAll("[data-view]").forEach((link) => {
@@ -266,13 +266,15 @@ let clioResult;
 let clioView;
 let clioTrim;
 let trimDrag;
-$("clio-mode").value = sessionStorage.getItem("clio-mode") === "manual" ? "manual" : "review";
+const savedClioMode = sessionStorage.getItem("clio-mode");
+$("clio-mode").value = ["auto_queue", "manual"].includes(savedClioMode) ? savedClioMode : "review";
 $("clio-mode").addEventListener("change", () => sessionStorage.setItem("clio-mode", $("clio-mode").value));
 
 function setClioJob(id) {
   clioJob = id;
   sessionStorage.setItem("clio-job", id);
   $("clio-preview").hidden = true;
+  $("clio-queue-link").hidden = true;
   $("clio-player").removeAttribute("src");
   $("clio-player").removeAttribute("data-video-id");
   clioTrim = null;
@@ -389,7 +391,8 @@ async function updateClio() {
     const count = status.result?.moments?.length || 0;
     const messages = {
       source_review: "Watch the chosen video, then generate clips or skip it.",
-      review: count ? "Preview the clips and choose which to send to your MacBook." : "Choose a start time to cut a clip from this source.",
+      review: count ? count + (count === 1 ? " clip is" : " clips are") + " ready in the clip queue."
+        : "Choose a start time to cut a clip from this source.",
       ready: `${count} clips ready. Waiting for your MacBook to collect them.`,
       exporting: "Preparing approved clips for your MacBook Desktop.",
       export_failed: "Clio could not prepare the clips for Desktop delivery.",
@@ -400,7 +403,8 @@ async function updateClio() {
       rejected: "Video rejected.",
       expired: "Delivery expired after 24 hours. Submit the topic again to regenerate the clips.",
     };
-    $("clio-status").textContent = status.message || messages[status.state] || "";
+    $("clio-status").textContent = status.message || status.result?.clip_judging?.reason || messages[status.state] || "";
+    $("clio-queue-link").hidden = status.state !== "review" || !count;
     $("clio-submit").disabled = status.state === "running";
     showClioResult(status);
     if (["running", "ready", "publishing", "exporting"].includes(status.state)) clioTimer = setTimeout(updateClio, 4000);
@@ -580,7 +584,7 @@ function startYoutubeDialog() {
   youtubeDraft = null;
   $("clio-youtube-channel").textContent = "Loading upload drafts…";
   $("clio-youtube-channel-choice").hidden = true;
-  $("clio-youtube-channel-select").disabled = true;
+  $("clio-youtube-channel-options").replaceChildren();
   $("clio-youtube-error").textContent = "";
   $("clio-youtube-confirm").disabled = true;
   $("clio-youtube-dialog").showModal();
@@ -591,16 +595,18 @@ function showApprovalDrafts(channels, clips, job) {
   const destination = youtube ? "youtube" : "desktop";
   youtubeDraft = { job, clips, channels, destination };
   $("clio-youtube-title").textContent = youtube ? "Upload to YouTube" : "Send to MacBook Desktop";
-  const picker = $("clio-youtube-channel-select");
+  const picker = $("clio-youtube-channel-options");
   const choose = channels?.length > 1;
   $("clio-youtube-channel-choice").hidden = !choose;
-  picker.disabled = !choose;
-  picker.replaceChildren();
   if (choose) {
-    picker.add(new Option("Choose a channel", ""));
     for (const channel of channels) {
       const duplicate = channels.some((other) => other.id !== channel.id && other.title === channel.title);
-      picker.add(new Option(duplicate ? channel.title + " (" + channel.id + ")" : channel.title, channel.id));
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = channel.id;
+      label.append(checkbox, duplicate ? channel.title + " (" + channel.id + ")" : channel.title);
+      picker.append(label);
     }
   }
   $("clio-youtube-channel").textContent = youtube && !choose ? "Channel: " + channels[0].title : "";
@@ -676,8 +682,11 @@ $("clio-review").addEventListener("submit", async (event) => {
   }
 });
 $("clio-youtube-cancel").addEventListener("click", () => $("clio-youtube-dialog").close());
-$("clio-youtube-channel-select").addEventListener("change", (event) => {
-  $("clio-youtube-confirm").disabled = batchSubmitting || clioPending || !event.currentTarget.value;
+function selectedYoutubeChannels() {
+  return [...$("clio-youtube-channel-options").querySelectorAll("input:checked")].map((input) => input.value);
+}
+$("clio-youtube-channel-options").addEventListener("change", () => {
+  $("clio-youtube-confirm").disabled = batchSubmitting || clioPending || !selectedYoutubeChannels().length;
 });
 $("clio-youtube-dialog").addEventListener("close", () => { youtubeDraft = null; });
 $("clio-youtube-dialog").addEventListener("cancel", (event) => {
@@ -694,9 +703,10 @@ $("clio-youtube-form").addEventListener("submit", async (event) => {
     ...(draft.destination === "youtube" ? { title: values.get("title-" + key), description: values.get("description-" + key),
       privacy: values.get("privacy-" + key), made_for_kids: values.get("kids-" + key) === "yes" } : {}),
   }));
-  const channelId = draft.channels?.length === 1 ? draft.channels[0].id : $("clio-youtube-channel-select").value;
-  if (draft.destination === "youtube" && !draft.channels.some((channel) => channel.id === channelId)) return;
-  const details = { destination: draft.destination, channel_id: channelId, confirmed: true };
+  const channelIds = draft.channels?.length === 1 ? [draft.channels[0].id] : selectedYoutubeChannels();
+  if (draft.destination === "youtube" && (!channelIds.length ||
+      channelIds.some((id) => !draft.channels.some((channel) => channel.id === id)))) return;
+  const details = { destination: draft.destination, channel_ids: channelIds, confirmed: true };
   if (draft.job) {
     submitClioReview(clips.map((clip) => clip.rank), draft.destination, { ...details, clips });
     return;
@@ -710,18 +720,19 @@ $("clio-youtube-form").addEventListener("submit", async (event) => {
   $("clio-youtube-cancel").disabled = true;
   $("clio-youtube-confirm").disabled = true;
   try {
-    const data = await post("/api/clio/weekly/clips", { ...details,
+    const data = await post("/api/clio/queue", { ...details,
       sources: [...groups].map(([job_id, items]) => ({ job_id, clips: items })),
     });
     $("clio-youtube-dialog").close();
     notify(data.queued + (data.queued === 1 ? " clip queued" : " clips queued") +
-      (draft.destination === "youtube" ? " for YouTube." : " for Desktop → Clio."));
+      (draft.destination === "youtube" ? " for " + channelIds.length +
+        (channelIds.length === 1 ? " YouTube channel." : " YouTube channels.") : " for Desktop → Clio."));
   } catch (error) {
     $("clio-youtube-error").textContent = error.message;
   } finally {
     batchSubmitting = false;
     $("clio-youtube-cancel").disabled = false;
-    $("clio-youtube-confirm").disabled = false;
+    $("clio-youtube-confirm").disabled = draft.channels?.length > 1 && !selectedYoutubeChannels().length;
     updateWeeklyClips();
   }
 });
@@ -903,15 +914,15 @@ async function updateWeeklyClips() {
   const status = $("clio-batch-status");
   let delay = 30000;
   try {
-    const response = await fetch("/api/clio/weekly/clips", { signal: AbortSignal.timeout(7000) });
+    const response = await fetch("/api/clio/queue", { signal: AbortSignal.timeout(7000) });
     const data = await response.json();
     if (request !== weeklyClipRequest) return;
-    if (!response.ok) throw new Error(data.error || "Could not load weekly clips.");
+    if (!response.ok) throw new Error(data.error || "Could not load the clip queue.");
     weeklyChannels = data.channels || (data.channel ? [data.channel] : []);
     if (renderWeeklyClips(data.sources)) delay = 5000;
     const availability = weeklyClips.length
       ? weeklyClips.length + (weeklyClips.length === 1 ? " clip available" : " clips available")
-      : "No weekly clips are awaiting approval.";
+      : "No clips are awaiting approval.";
     status.textContent = availability + (weeklyChannels.length
       ? " · Connected YouTube channels: " + weeklyChannels.map(({ title }) => title).join(", ")
       : " · Connect a YouTube channel to upload to YouTube.");
@@ -1033,7 +1044,7 @@ updateClioUploads();
 updateWeeklyQueue();
 updateWeeklyClips();
 window.addEventListener("hashchange", () => {
-  if (location.hash === "#clio-weekly") updateWeeklyQueue();
+  if (["#clio-queue", "#clio-weekly"].includes(location.hash)) updateWeeklyQueue();
   else $("clio-batch-clips").querySelectorAll("video").forEach((video) => video.pause());
   updateWeeklyClips();
 });

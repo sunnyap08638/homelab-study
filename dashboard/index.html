@@ -91,7 +91,7 @@
           <p>Find YouTube highlights, trim clips, and review them before uploading.</p></div></div>
         <nav class="clio-tabs" aria-label="Project Clio">
           <a href="#clio" id="clio-search-tab">Find clips</a>
-          <a href="#clio-weekly" id="clio-weekly-tab">Weekly clips</a>
+          <a href="#clio-queue" id="clio-weekly-tab">Clip queue</a>
         </nav>
         <div id="clio-search-panel">
         <section class="panel"><div class="panel-head"><div><h2>Find clips</h2><p>Enter a topic or paste a YouTube video link.</p></div></div>
@@ -102,6 +102,7 @@
                 <label>Clipping mode
                   <select id="clio-mode">
                     <option value="review">Review suggested clips</option>
+                    <option value="auto_queue">Automatically find and queue clips</option>
                     <option value="manual">Choose clips myself</option>
                   </select>
                 </label>
@@ -109,6 +110,7 @@
               </div>
             </form>
             <p id="clio-status" role="status"></p>
+            <a id="clio-queue-link" href="#clio-queue" hidden>Open clip queue</a>
             <p id="clio-notice" role="status"></p>
             <ul id="clio-youtube-status" aria-label="YouTube uploads" aria-live="polite" hidden></ul>
           </div>
@@ -157,7 +159,7 @@
         </div>
         <div id="clio-weekly-panel" hidden>
           <section class="panel">
-            <div class="panel-head"><div><h2>Weekly clips</h2><p>Play the clips, approve the ones you want, and send them to YouTube or your MacBook Desktop.</p></div></div>
+            <div class="panel-head"><div><h2>Clip queue</h2><p>Review clips from your searches, manual trims, and weekly scans. Send selected clips together to YouTube or your MacBook Desktop.</p></div></div>
             <div class="panel-body prose">
               <p id="clio-batch-status" role="status"></p>
               <div class="clio-actions" id="clio-batch-actions" hidden>
@@ -193,9 +195,10 @@
           <form id="clio-youtube-form">
             <h2 id="clio-youtube-title">Upload to YouTube</h2>
             <p id="clio-youtube-channel"></p>
-            <label id="clio-youtube-channel-choice" hidden>YouTube channel
-              <select id="clio-youtube-channel-select" required disabled></select>
-            </label>
+            <fieldset id="clio-youtube-channel-choice" hidden>
+              <legend>YouTube channels</legend>
+              <div id="clio-youtube-channel-options"></div>
+            </fieldset>
             <p id="clio-youtube-error" role="alert"></p>
             <div id="clio-youtube-drafts"></div>
             <p id="clio-approval-details"></p>
